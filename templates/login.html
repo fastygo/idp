@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CyberOS SSO — Sign In</title>
-    <script type="module" src="{{.HankoAPI}}/frontend/hanko-elements.js" crossorigin="anonymous"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -41,18 +40,19 @@
     <div class="container">
         <h1>CyberOS SSO</h1>
         <div id="loading" class="loading">Loading authentication...</div>
-        <hanko-auth api="{{.HankoAPI}}" style="display:none"></hanko-auth>
+        <hanko-auth style="display:none"></hanko-auth>
     </div>
 
     <script type="module">
-        import { register } from "{{.HankoAPI}}/frontend/hanko-elements.js";
+        import { register } from "https://cdn.jsdelivr.net/npm/@teamhanko/hanko-elements/dist/elements.js";
 
         await register("{{.HankoAPI}}", { shadow: false });
 
         document.getElementById("loading").style.display = "none";
-        document.querySelector("hanko-auth").style.display = "block";
+        const auth = document.querySelector("hanko-auth");
+        auth.style.display = "block";
 
-        document.addEventListener("hankoAuthSuccess", () => {
+        auth.addEventListener("onSessionCreated", () => {
             window.location.href = "/sso/complete";
         });
     </script>
