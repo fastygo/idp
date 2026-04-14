@@ -28,10 +28,38 @@ type JWK struct {
 }
 
 type HankoClaims struct {
-	Sub   string `json:"sub"`
-	Email string `json:"email"`
-	Exp   int64  `json:"exp"`
-	Iss   string `json:"iss"`
+	Sub   string         `json:"sub"`
+	Email HankoEmailClaim `json:"email"`
+	Exp   int64          `json:"exp"`
+	Iss   string         `json:"iss"`
+}
+
+type HankoEmailClaim struct {
+	Address    string `json:"address"`
+	IsPrimary  bool   `json:"is_primary"`
+	IsVerified bool   `json:"is_verified"`
+}
+
+func (c *HankoEmailClaim) UnmarshalJSON(data []byte) error {
+	var address string
+	if err := json.Unmarshal(data, &address); err == nil {
+		c.Address = address
+		return nil
+	}
+
+	var obj struct {
+		Address    string `json:"address"`
+		IsPrimary  bool   `json:"is_primary"`
+		IsVerified bool   `json:"is_verified"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+
+	c.Address = obj.Address
+	c.IsPrimary = obj.IsPrimary
+	c.IsVerified = obj.IsVerified
+	return nil
 }
 
 type JWTVerifier struct {

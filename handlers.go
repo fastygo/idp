@@ -72,7 +72,7 @@ func (s *IdPServer) handleSSOComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email := claims.Email
+	email := claims.Email.Address
 	if email == "" {
 		http.Error(w, "No email in token", http.StatusBadRequest)
 		return
