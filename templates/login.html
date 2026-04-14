@@ -44,10 +44,9 @@
     </div>
 
     <script type="module">
-        import { register } from "https://cdn.jsdelivr.net/npm/@teamhanko/hanko-elements/dist/elements.js";
+        import { register } from "https://cdn.jsdelivr.net/npm/@teamhanko/hanko-elements@2.6.0/dist/elements.js";
 
         await register("{{.HankoAPI}}", {
-            shadow: false,
             enablePasskeys: false,
             hidePasskeyButtonOnLogin: true,
         });
