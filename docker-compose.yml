@@ -8,10 +8,10 @@ services:
       - .env
     environment:
       IDP_SESSION_KEY: ${IDP_SESSION_KEY}
-      IDP_HANKO_API_URL: ${IDP_HANKO_API_URL:-https://api.example.com}
-      IDP_ENTITY_ID: ${IDP_ENTITY_ID:-https://idp.example.com}
-      IDP_BASE_URL: ${IDP_BASE_URL:-https://idp.example.com}
-      OIDC_CLIENT_SECRET_MYAPP: ${OIDC_CLIENT_SECRET_MYAPP}
+      IDP_HANKO_API_URL: ${IDP_HANKO_API_URL:-https://api.cybeross.ru}
+      IDP_ENTITY_ID: ${IDP_ENTITY_ID:-https://idp.cybeross.ru}
+      IDP_BASE_URL: ${IDP_BASE_URL:-https://idp.cybeross.ru}
+      OIDC_CLIENT_SECRET_FASTYGO: ${OIDC_CLIENT_SECRET_FASTYGO}
     volumes:
       - idp_keys:/app/keys
     restart: unless-stopped

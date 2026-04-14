@@ -1,20 +1,20 @@
-entity_id: "https://idp.example.com"
-base_url: "https://idp.example.com"
+entity_id: "https://idp.cybeross.ru"
+base_url: "https://idp.cybeross.ru"
 listen_addr: ":5800"
-hanko_api_url: "https://api.example.com"
+hanko_api_url: "https://api.cybeross.ru"
 key_path: "keys/idp.key"
 cert_path: "keys/idp.crt"
 # Prefer setting IDP_SESSION_KEY in .env (see .env.example); overrides this value at runtime.
 session_key: "CHANGE-ME-TO-A-RANDOM-32-BYTE-KEY"
 
 service_providers:
-  - entity_id: "https://sp.example.com"
-    acs_url: "https://sp.example.com/saml/acs"
-    name: "Example main site"
+  - entity_id: "https://cybeross.ru"
+    acs_url: "https://cybeross.ru/saml/acs"
+    name: "CyberOS"
 
 oidc_clients:
-  - client_id: "myapp"
-    client_secret: "${OIDC_CLIENT_SECRET_MYAPP}"
+  - client_id: "fastygo"
+    client_secret: "${OIDC_CLIENT_SECRET_FASTYGO}"
     redirect_uris:
-      - "https://client.example.com/auth/callback"
-    name: "Example OIDC client"
+      - "https://fastygo.ru/auth/callback"
+    name: "fastygo"

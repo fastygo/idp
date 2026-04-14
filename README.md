@@ -56,13 +56,13 @@ Hanko is **not** configured as a SAML SP here; this IdP bridges **Hanko (JWT + H
 | `entity_id` | SAML IdP Entity ID (public URL of the IdP) |
 | `base_url` | Base URL used in metadata and OIDC `issuer` (must match public URL) |
 | `listen_addr` | HTTP listen address (default `:5800`) |
-| `hanko_api_url` | Hanko public API base URL (e.g. `https://api.example.com`) |
+| `hanko_api_url` | Hanko public API base URL (e.g. `https://api.cybeross.ru`) |
 | `key_path` / `cert_path` | RSA private key and X.509 certificate (PEM) for SAML assertion signing and OIDC JWT signing |
 | `session_key` | HMAC secret for signed cookies (override with env in production) |
 | `service_providers` | SAML SPs: `entity_id`, `acs_url`, `name` |
 | `oidc_clients` | OIDC/OAuth clients: `client_id`, `client_secret`, `redirect_uris`, `name` |
 
-**OIDC client secrets:** You can put a placeholder in YAML (e.g. `${OIDC_CLIENT_SECRET_MYAPP}`) and set the real value via environment variable `OIDC_CLIENT_SECRET_<CLIENTID>` (uppercase `client_id`), e.g. `OIDC_CLIENT_SECRET_MYAPP` for client `myapp`. The server applies overrides after loading YAML.
+**OIDC client secrets:** You can put a placeholder in YAML (e.g. `${OIDC_CLIENT_SECRET_FASTYGO}`) and set the real value via environment variable `OIDC_CLIENT_SECRET_<CLIENTID>` (uppercase `client_id`), e.g. `OIDC_CLIENT_SECRET_FASTYGO` for client `fastygo`. The server applies overrides after loading YAML.
 
 ### Environment overrides
 
@@ -77,7 +77,7 @@ After loading `config.yaml`, these variables **override** the file if set:
 | `IDP_HANKO_API_URL` | `hanko_api_url` |
 | `IDP_KEY_PATH` | `key_path` |
 | `IDP_CERT_PATH` | `cert_path` |
-| `OIDC_CLIENT_SECRET_<CLIENTID>` | `client_secret` for the matching `oidc_clients[]` entry (e.g. `OIDC_CLIENT_SECRET_MYAPP`) |
+| `OIDC_CLIENT_SECRET_<CLIENTID>` | `client_secret` for the matching `oidc_clients[]` entry (e.g. `OIDC_CLIENT_SECRET_FASTYGO`) |
 
 Use these in Docker or systemd to avoid committing secrets.
 
@@ -103,7 +103,7 @@ Defaults: listen on `:5800`, read `config.yaml` from the current directory.
    cp .env.example .env
    ```
 
-   Edit `.env`: set a strong `IDP_SESSION_KEY`, correct public URLs (`IDP_ENTITY_ID`, `IDP_BASE_URL`, `IDP_HANKO_API_URL`), and **OIDC client secret(s)** (e.g. `OIDC_CLIENT_SECRET_MYAPP`) matching your registered OIDC apps.
+   Edit `.env`: set a strong `IDP_SESSION_KEY`, correct public URLs (`IDP_ENTITY_ID`, `IDP_BASE_URL`, `IDP_HANKO_API_URL`), and **OIDC client secret(s)** (e.g. `OIDC_CLIENT_SECRET_FASTYGO`) matching your registered OIDC apps.
 
 2. Build and start:
 
