@@ -1,0 +1,20 @@
+# SAML + OIDC IdP — self-contained. Copy .env.example to .env and adjust.
+services:
+  idp:
+    build: .
+    ports:
+      - "127.0.0.1:5800:5800"
+    env_file:
+      - .env
+    environment:
+      IDP_SESSION_KEY: ${IDP_SESSION_KEY}
+      IDP_HANKO_API_URL: ${IDP_HANKO_API_URL:-https://api.example.com}
+      IDP_ENTITY_ID: ${IDP_ENTITY_ID:-https://idp.example.com}
+      IDP_BASE_URL: ${IDP_BASE_URL:-https://idp.example.com}
+      OIDC_CLIENT_SECRET_MYAPP: ${OIDC_CLIENT_SECRET_MYAPP}
+    volumes:
+      - idp_keys:/app/keys
+    restart: unless-stopped
+
+volumes:
+  idp_keys:

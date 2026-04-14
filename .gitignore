@@ -1,0 +1,5 @@
+.cursor
+.manual
+.env
+env.*
+**/*.exe
