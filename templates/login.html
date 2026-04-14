@@ -46,7 +46,11 @@
     <script type="module">
         import { register } from "https://cdn.jsdelivr.net/npm/@teamhanko/hanko-elements/dist/elements.js";
 
-        await register("{{.HankoAPI}}", { shadow: false });
+        await register("{{.HankoAPI}}", {
+            shadow: false,
+            enablePasskeys: false,
+            hidePasskeyButtonOnLogin: true,
+        });
 
         document.getElementById("loading").style.display = "none";
         const auth = document.querySelector("hanko-auth");
