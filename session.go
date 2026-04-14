@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	idpSessionCookie      = "idp_session"
-	idpPendingCookie      = "idp_pending"
-	idpOIDCPendingCookie  = "idp_oidc_pending"
-	sessionDuration       = 8 * time.Hour
+	idpSessionCookie     = "idp_session"
+	idpPendingCookie     = "idp_pending"
+	idpOIDCPendingCookie = "idp_oidc_pending"
+	sessionDuration      = 8 * time.Hour
 )
 
 type IdPSession struct {
@@ -45,6 +45,18 @@ func createSession(w http.ResponseWriter, email, sessionKey string) {
 		Secure:   true,
 		SameSite: http.SameSiteNoneMode,
 		MaxAge:   int(sessionDuration.Seconds()),
+	})
+}
+
+func clearSession(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     idpSessionCookie,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
 	})
 }
 
@@ -105,6 +117,8 @@ func clearPendingRequest(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -155,6 +169,8 @@ func clearOIDCPendingRequest(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

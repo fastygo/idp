@@ -14,12 +14,14 @@ type IdPServer struct {
 	jwt       *JWTVerifier
 	codeStore *CodeStore
 	loginTpl  *template.Template
+	logoutTpl *template.Template
 	postTpl   *template.Template
 }
 
 func NewIdPServer(cfg *Config, kp *IdPKeyPair) *IdPServer {
 	tplDir := "templates"
 	loginTpl := template.Must(template.ParseFiles(filepath.Join(tplDir, "login.html")))
+	logoutTpl := template.Must(template.ParseFiles(filepath.Join(tplDir, "logout.html")))
 	postTpl := template.Must(template.ParseFiles(filepath.Join(tplDir, "postform.html")))
 
 	return &IdPServer{
@@ -28,6 +30,7 @@ func NewIdPServer(cfg *Config, kp *IdPKeyPair) *IdPServer {
 		jwt:       NewJWTVerifier(cfg.HankoAPIURL),
 		codeStore: NewCodeStore(),
 		loginTpl:  loginTpl,
+		logoutTpl: logoutTpl,
 		postTpl:   postTpl,
 	}
 }
@@ -115,6 +118,25 @@ func (s *IdPServer) handleSSOComplete(w http.ResponseWriter, r *http.Request) {
 
 	clearPendingRequest(w)
 	s.issueResponse(w, parsedReq, email)
+}
+
+func (s *IdPServer) handleLogout(w http.ResponseWriter, r *http.Request) {
+	returnTo := r.URL.Query().Get("return_to")
+	if !s.cfg.IsAllowedLogoutReturnURL(returnTo) {
+		returnTo = s.cfg.DefaultLogoutReturnURL()
+	}
+
+	clearSession(w)
+	clearPendingRequest(w)
+	clearOIDCPendingRequest(w)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.logoutTpl.Execute(w, map[string]string{
+		"HankoAPI": s.cfg.HankoAPIURL,
+		"ReturnTo": returnTo,
+	}); err != nil {
+		log.Printf("logout template execution failed: %v", err)
+	}
 }
 
 func (s *IdPServer) issueResponse(w http.ResponseWriter, req *ParsedRequest, email string) {

@@ -38,6 +38,7 @@ func main() {
 	mux.HandleFunc("GET /metadata", handleMetadata(cfg, kp))
 	mux.HandleFunc("GET /sso", srv.handleSSO)
 	mux.HandleFunc("GET /sso/complete", srv.handleSSOComplete)
+	mux.HandleFunc("GET /logout", srv.handleLogout)
 
 	// OIDC endpoints
 	mux.HandleFunc("GET /.well-known/openid-configuration", srv.handleOIDCDiscovery)

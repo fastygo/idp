@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -58,17 +59,17 @@ type OIDCClient struct {
 }
 
 type Config struct {
-	EntityID     string            `yaml:"entity_id"`
-	BaseURL      string            `yaml:"base_url"`
-	ListenAddr   string            `yaml:"listen_addr"`
-	HankoAPIURL  string            `yaml:"hanko_api_url"`
-	KeyPath      string            `yaml:"key_path"`
-	CertPath     string            `yaml:"cert_path"`
-	SessionKey   string            `yaml:"session_key"`
-	SPs          []ServiceProvider `yaml:"service_providers"`
-	OIDCClients  []OIDCClient      `yaml:"oidc_clients"`
-	spIndex      map[string]*ServiceProvider
-	oidcIndex    map[string]*OIDCClient
+	EntityID    string            `yaml:"entity_id"`
+	BaseURL     string            `yaml:"base_url"`
+	ListenAddr  string            `yaml:"listen_addr"`
+	HankoAPIURL string            `yaml:"hanko_api_url"`
+	KeyPath     string            `yaml:"key_path"`
+	CertPath    string            `yaml:"cert_path"`
+	SessionKey  string            `yaml:"session_key"`
+	SPs         []ServiceProvider `yaml:"service_providers"`
+	OIDCClients []OIDCClient      `yaml:"oidc_clients"`
+	spIndex     map[string]*ServiceProvider
+	oidcIndex   map[string]*OIDCClient
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -112,6 +113,54 @@ func (c *Config) FindOIDCClient(clientID string) *OIDCClient {
 	return c.oidcIndex[clientID]
 }
 
+func (c *Config) DefaultLogoutReturnURL() string {
+	if len(c.SPs) > 0 {
+		return ensureTrailingSlash(c.SPs[0].EntityID)
+	}
+	for _, client := range c.OIDCClients {
+		if len(client.RedirectURIs) > 0 {
+			if origin := originOf(client.RedirectURIs[0]); origin != "" {
+				return origin + "/"
+			}
+		}
+	}
+	return ensureTrailingSlash(c.BaseURL)
+}
+
+func (c *Config) IsAllowedLogoutReturnURL(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if strings.HasPrefix(raw, "/") {
+		return true
+	}
+
+	target, err := url.Parse(raw)
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return false
+	}
+
+	allowedOrigins := map[string]struct{}{}
+	if origin := originOf(c.BaseURL); origin != "" {
+		allowedOrigins[origin] = struct{}{}
+	}
+	for _, sp := range c.SPs {
+		if origin := originOf(sp.EntityID); origin != "" {
+			allowedOrigins[origin] = struct{}{}
+		}
+	}
+	for _, client := range c.OIDCClients {
+		for _, redirectURI := range client.RedirectURIs {
+			if origin := originOf(redirectURI); origin != "" {
+				allowedOrigins[origin] = struct{}{}
+			}
+		}
+	}
+
+	_, ok := allowedOrigins[target.Scheme+"://"+target.Host]
+	return ok
+}
+
 func (oc *OIDCClient) ValidRedirectURI(uri string) bool {
 	for _, allowed := range oc.RedirectURIs {
 		if allowed == uri {
@@ -119,4 +168,19 @@ func (oc *OIDCClient) ValidRedirectURI(uri string) bool {
 		}
 	}
 	return false
+}
+
+func originOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func ensureTrailingSlash(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	return strings.TrimRight(raw, "/") + "/"
 }
