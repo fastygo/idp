@@ -37,6 +37,15 @@
   var hanko = new HankoClass(hankoApiUrl);
   var currentState = null;
 
+  function getLoginIdentifierAction(state) {
+    return state && state.actions && state.actions.continue_with_login_identifier;
+  }
+
+  function getLoginIdentifierInput(action) {
+    if (!action || !action.inputs) return null;
+    return action.inputs.email || action.inputs.username || action.inputs.identifier || null;
+  }
+
   function showError(msg) {
     if (errorEl) {
       errorEl.textContent = msg;
@@ -83,9 +92,25 @@
     switch (state.name) {
       case "login_init":
       case "login_identifier":
+        var loginIdentifierInput = getLoginIdentifierInput(
+          getLoginIdentifierAction(state)
+        );
         showForm();
         hidePasswordField();
+        if (loginIdentifierInput) {
+          emailInput.name = loginIdentifierInput.name || "identifier";
+          emailInput.type = loginIdentifierInput.type === "string" ? "text" : loginIdentifierInput.type;
+          emailInput.autocomplete =
+            loginIdentifierInput.name === "username"
+              ? "username webauthn"
+              : "email username webauthn";
+        }
         emailInput.focus();
+        break;
+
+      case "login_method_chooser":
+        showForm();
+        hidePasswordField();
         break;
 
       case "login_password":
@@ -145,13 +170,30 @@
       });
   });
 
+  function advanceState(state) {
+    if (
+      state &&
+      state.name === "login_method_chooser" &&
+      state.actions.continue_to_password_login &&
+      state.actions.continue_to_password_login.enabled
+    ) {
+      return state.actions.continue_to_password_login.run();
+    }
+
+    return Promise.resolve(state);
+  }
+
   function processSubmit(state) {
     var a = state.actions;
+    var loginIdentifierAction = getLoginIdentifierAction(state);
+    var loginIdentifierInput = getLoginIdentifierInput(loginIdentifierAction);
 
-    if (a.continue_with_login_identifier && a.continue_with_login_identifier.enabled) {
-      return a.continue_with_login_identifier.run({
-        identifier: emailInput.value,
-      });
+    if (loginIdentifierAction && loginIdentifierAction.enabled && loginIdentifierInput) {
+      return loginIdentifierAction
+        .run({
+          [loginIdentifierInput.name]: emailInput.value,
+        })
+        .then(advanceState);
     }
 
     if (a.password_login && a.password_login.enabled) {
@@ -168,6 +210,7 @@
   (function init() {
     hanko
       .createState("login")
+      .then(advanceState)
       .then(function (state) {
         renderState(state);
       })
