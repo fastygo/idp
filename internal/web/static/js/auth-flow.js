@@ -1,16 +1,22 @@
 /**
  * auth-flow.js — Custom login state machine using hanko-frontend-sdk.
- * Reads config from <script id="auth-config"> and drives the login form
- * rendered by login.templ with UI8Kit CSS classes.
+ * Drives the login form rendered by login.templ with UI8Kit CSS classes.
+ *
+ * State flow is driven imperatively: createState() and action.run() return
+ * the next interactive state after the SDK's internal auto-steps (e.g.
+ * "preflight" is skipped automatically). We do NOT use onAfterStateChange
+ * because it fires for intermediate auto-stepped states and conflicts with
+ * the SDK's own stepping logic.
  */
 (function () {
   "use strict";
 
-  const configEl = document.getElementById("auth-config");
+  var configEl = document.getElementById("auth-config");
   if (!configEl) return;
 
-  const config = JSON.parse(configEl.textContent);
-  const { hankoApiUrl, allowPublicRegistration } = config;
+  var config = JSON.parse(configEl.textContent);
+  var hankoApiUrl = config.hankoApiUrl;
+  var allowPublicRegistration = config.allowPublicRegistration;
 
   var HankoClass =
     (window.hankoFrontendSdk && window.hankoFrontendSdk.Hanko) ||
@@ -18,19 +24,18 @@
 
   if (!hankoApiUrl || !HankoClass) return;
 
-  const loadingEl = document.getElementById("auth-loading");
-  const formEl = document.getElementById("auth-login-form");
-  const emailInput = document.getElementById("auth-email");
-  const passwordWrap = document.getElementById("auth-password-wrap");
-  const passwordInput = document.getElementById("auth-password");
-  const errorEl = document.getElementById("auth-error");
-  const submitBtn = document.getElementById("auth-submit");
+  var loadingEl = document.getElementById("auth-loading");
+  var formEl = document.getElementById("auth-login-form");
+  var emailInput = document.getElementById("auth-email");
+  var passwordWrap = document.getElementById("auth-password-wrap");
+  var passwordInput = document.getElementById("auth-password");
+  var errorEl = document.getElementById("auth-error");
+  var submitBtn = document.getElementById("auth-submit");
 
   if (!formEl || !emailInput) return;
 
-  const hanko = new HankoClass(hankoApiUrl);
-
-  let currentState = null;
+  var hanko = new HankoClass(hankoApiUrl);
+  var currentState = null;
 
   function showError(msg) {
     if (errorEl) {
@@ -64,50 +69,23 @@
     }
   }
 
-  function setLoading(loading) {
+  function setLoading(on) {
     if (submitBtn) {
-      submitBtn.disabled = loading;
-      submitBtn.classList.toggle("opacity-50", loading);
+      submitBtn.disabled = on;
+      submitBtn.classList.toggle("opacity-50", on);
     }
   }
 
-  async function handleState(state) {
+  function renderState(state) {
     currentState = state;
     clearError();
 
     switch (state.name) {
-      case "preflight":
-        if (state.actions.continue_to_login_init) {
-          const next = await state.actions.continue_to_login_init.run();
-          handleState(next);
-        } else if (state.actions.continue_with_login_identifier) {
-          showForm();
-          hidePasswordField();
-        } else {
-          showForm();
-        }
-        break;
-
       case "login_init":
-        showForm();
-        hidePasswordField();
-        emailInput.focus();
-        break;
-
       case "login_identifier":
         showForm();
         hidePasswordField();
         emailInput.focus();
-        break;
-
-      case "login_method_chooser":
-        if (state.actions.continue_to_password_login) {
-          const next = await state.actions.continue_to_password_login.run();
-          handleState(next);
-        } else {
-          showForm();
-          showPasswordField();
-        }
         break;
 
       case "login_password":
@@ -116,16 +94,12 @@
         break;
 
       case "onboarding_email":
+        showForm();
         if (!allowPublicRegistration) {
-          showError("Registration is not available. Contact your administrator.");
-          showForm();
-          return;
+          showError(
+            "Registration is not available. Contact your administrator."
+          );
         }
-        showForm();
-        break;
-
-      case "passcode_confirmation":
-        showForm();
         break;
 
       case "success":
@@ -134,11 +108,16 @@
 
       case "error":
         showForm();
-        showError(state.error_message || state.payload?.error || "Authentication error");
+        showError(
+          state.error_message ||
+            (state.payload && state.payload.error) ||
+            "Authentication error"
+        );
         break;
 
       default:
         showForm();
+        console.log("[auth-flow] unhandled state:", state.name, state);
         break;
     }
   }
@@ -147,59 +126,54 @@
     window.location.href = "/sso/complete";
   });
 
-  hanko.onAfterStateChange(function (detail) {
-    if (detail && detail.state) {
-      handleState(detail.state);
-    }
-  });
-
-  formEl.addEventListener("submit", async function (e) {
+  formEl.addEventListener("submit", function (e) {
     e.preventDefault();
+    if (!currentState) return;
+
     clearError();
     setLoading(true);
 
-    try {
-      if (!currentState) {
-        const state = await hanko.createState("login");
-        await processSubmit(state);
-        return;
-      }
-
-      await processSubmit(currentState);
-    } catch (err) {
-      showError(err.message || "An error occurred");
-    } finally {
-      setLoading(false);
-    }
+    processSubmit(currentState)
+      .then(function (next) {
+        if (next) renderState(next);
+      })
+      .catch(function (err) {
+        showError(err.message || "An error occurred");
+      })
+      .finally(function () {
+        setLoading(false);
+      });
   });
 
-  async function processSubmit(state) {
-    if (state.actions.continue_with_login_identifier) {
-      const next = await state.actions.continue_with_login_identifier.run({
-        username: emailInput.value,
+  function processSubmit(state) {
+    var a = state.actions;
+
+    if (a.continue_with_login_identifier && a.continue_with_login_identifier.enabled) {
+      return a.continue_with_login_identifier.run({
+        identifier: emailInput.value,
       });
-      handleState(next);
-    } else if (state.actions.password_login) {
-      const next = await state.actions.password_login.run({
-        password: passwordInput.value,
-      });
-      handleState(next);
-    } else if (state.actions.continue_to_password_login) {
-      const next = await state.actions.continue_to_password_login.run();
-      handleState(next);
-    } else {
-      showError("Unexpected state: " + state.name);
     }
+
+    if (a.password_login && a.password_login.enabled) {
+      return a.password_login.run({ password: passwordInput.value });
+    }
+
+    if (a.continue_to_password_login && a.continue_to_password_login.enabled) {
+      return a.continue_to_password_login.run();
+    }
+
+    return Promise.reject(new Error("Unexpected state: " + state.name));
   }
 
-  // Initialize
-  (async function init() {
-    try {
-      const state = await hanko.createState("login");
-      handleState(state);
-    } catch (err) {
-      showForm();
-      showError("Failed to initialize: " + err.message);
-    }
+  (function init() {
+    hanko
+      .createState("login")
+      .then(function (state) {
+        renderState(state);
+      })
+      .catch(function (err) {
+        showForm();
+        showError("Failed to initialize: " + err.message);
+      });
   })();
 })();
