@@ -12,7 +12,11 @@
   const config = JSON.parse(configEl.textContent);
   const { hankoApiUrl, allowPublicRegistration } = config;
 
-  if (!hankoApiUrl || !window.Hanko) return;
+  var HankoClass =
+    (window.hankoFrontendSdk && window.hankoFrontendSdk.Hanko) ||
+    window.Hanko;
+
+  if (!hankoApiUrl || !HankoClass) return;
 
   const loadingEl = document.getElementById("auth-loading");
   const formEl = document.getElementById("auth-login-form");
@@ -24,7 +28,7 @@
 
   if (!formEl || !emailInput) return;
 
-  const hanko = new window.Hanko({ apiUrl: hankoApiUrl });
+  const hanko = new HankoClass(hankoApiUrl);
 
   let currentState = null;
 
