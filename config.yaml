@@ -18,3 +18,12 @@ oidc_clients:
     redirect_uris:
       - "https://fastygo.ru/auth/callback"
     name: "fastygo"
+
+hanko_admin_url: "http://hanko:8001"
+
+features:
+  allow_public_registration: false
+  allow_oidc_registration: false
+  allow_saml_registration: true
+  admin_emails:
+    - "admin@cybeross.ru"

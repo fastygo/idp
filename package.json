@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i internal/web/static/css/input.css -o internal/web/static/css/app.css --minify",
+    "build:sdk": "cp node_modules/@teamhanko/hanko-frontend-sdk/dist/sdk.umd.js internal/web/static/js/hanko-frontend-sdk.js"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4",
+    "@teamhanko/hanko-frontend-sdk": "^2"
+  }
+}

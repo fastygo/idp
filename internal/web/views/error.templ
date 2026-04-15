@@ -1,0 +1,21 @@
+package views
+
+templ ErrorPage(data ErrorPageData) {
+	@Layout(data.Layout, nil, errorBody(data))
+}
+
+templ errorBody(data ErrorPageData) {
+	<main class="flex items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+		<div class="w-full max-w-md">
+			<div class="ui-card p-8 text-center">
+				<h1 class="text-2xl font-semibold mb-4">{ data.Strings.GenericTitle }</h1>
+				if data.Message != "" {
+					<p class="text-muted-foreground mb-4">{ data.Message }</p>
+				} else {
+					<p class="text-muted-foreground mb-4">{ data.Strings.GenericMessage }</p>
+				}
+				<a href="/" class="ui-btn ui-btn-secondary inline-block">{ data.Strings.BackLink }</a>
+			</div>
+		</div>
+	</main>
+}

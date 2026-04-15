@@ -1,0 +1,48 @@
+{
+  "brand_name": "CyberOS SSO",
+  "theme": {
+    "label": "Тема",
+    "switch_to_dark_label": "Переключить на тёмную тему",
+    "switch_to_light_label": "Переключить на светлую тему"
+  },
+  "language": {
+    "label": "Язык",
+    "current_label": "RU",
+    "next_label": "EN",
+    "next_locale": "en",
+    "available": ["en", "ru"],
+    "locale_labels": {
+      "en": "EN",
+      "ru": "RU"
+    }
+  },
+  "login": {
+    "title": "Вход",
+    "email_label": "Электронная почта",
+    "password_label": "Пароль",
+    "submit": "Продолжить",
+    "error_invalid_credentials": "Неверный email или пароль",
+    "error_account_not_found": "Учётная запись не найдена",
+    "loading": "Загрузка аутентификации..."
+  },
+  "logout": {
+    "title": "Выход",
+    "message": "Завершение сессии SSO и возврат в приложение."
+  },
+  "admin": {
+    "title": "Консоль администратора",
+    "create_user": "Создать пользователя",
+    "email_label": "Email пользователя",
+    "users_table_title": "Все пользователи",
+    "submit_create": "Создать",
+    "column_email": "Email",
+    "column_id": "ID",
+    "column_created": "Создан",
+    "no_users": "Пользователи не найдены."
+  },
+  "errors": {
+    "generic_title": "Ошибка",
+    "generic_message": "Произошла непредвиденная ошибка.",
+    "back_link": "Назад"
+  }
+}

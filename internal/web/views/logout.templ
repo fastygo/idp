@@ -1,0 +1,37 @@
+package views
+
+templ LogoutPage(data LogoutPageData) {
+	@Layout(data.Layout, nil, logoutBody(data))
+}
+
+templ logoutBody(data LogoutPageData) {
+	<div id="logout-data" data-return-to={ data.ReturnTo } class="hidden"></div>
+	<main class="flex items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+		<div class="w-full max-w-md">
+			<div class="ui-card p-8 text-center">
+				<h1 class="text-2xl font-semibold mb-4">{ data.Strings.Title }</h1>
+				<p class="text-muted-foreground">{ data.Strings.Message }</p>
+			</div>
+		</div>
+	</main>
+	<script>
+		(async function () {
+			const configEl = document.getElementById("auth-config");
+			const config = JSON.parse(configEl.textContent);
+			const hankoApiUrl = config.hankoApiUrl.replace(/\/$/, "");
+			const logoutData = document.getElementById("logout-data");
+			const returnTo = logoutData ? logoutData.dataset.returnTo : "/";
+			try {
+				await fetch(hankoApiUrl + "/logout", {
+					method: "POST",
+					credentials: "include",
+					mode: "cors",
+				});
+			} catch (e) {
+				console.error("Hanko logout failed", e);
+			} finally {
+				window.location.replace(returnTo);
+			}
+		})();
+	</script>
+}

@@ -1,0 +1,48 @@
+{
+  "brand_name": "CyberOS SSO",
+  "theme": {
+    "label": "Theme",
+    "switch_to_dark_label": "Switch to dark theme",
+    "switch_to_light_label": "Switch to light theme"
+  },
+  "language": {
+    "label": "Language",
+    "current_label": "EN",
+    "next_label": "RU",
+    "next_locale": "ru",
+    "available": ["en", "ru"],
+    "locale_labels": {
+      "en": "EN",
+      "ru": "RU"
+    }
+  },
+  "login": {
+    "title": "Sign In",
+    "email_label": "Email",
+    "password_label": "Password",
+    "submit": "Continue",
+    "error_invalid_credentials": "Invalid email or password",
+    "error_account_not_found": "Account not found",
+    "loading": "Loading authentication..."
+  },
+  "logout": {
+    "title": "Signing Out",
+    "message": "Closing your SSO session and returning to the application."
+  },
+  "admin": {
+    "title": "Admin Console",
+    "create_user": "Create User",
+    "email_label": "User Email",
+    "users_table_title": "All Users",
+    "submit_create": "Create",
+    "column_email": "Email",
+    "column_id": "ID",
+    "column_created": "Created",
+    "no_users": "No users found."
+  },
+  "errors": {
+    "generic_title": "Error",
+    "generic_message": "An unexpected error occurred.",
+    "back_link": "Go back"
+  }
+}

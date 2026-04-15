@@ -1,0 +1,72 @@
+package views
+
+import (
+	"encoding/json"
+	"strings"
+
+	ui8layout "github.com/fastygo/ui8kit/layout"
+	templ2 "github.com/a-h/templ"
+)
+
+templ Layout(data LayoutData, headExtra templ2.Component, body templ2.Component) {
+	@ui8layout.Shell(ui8layout.ShellProps{
+		Title:          data.Title,
+		Lang:           data.Locale,
+		BrandName:      data.BrandName,
+		Active:         data.Active,
+		MarketingShell: true,
+		HeadExtra:      layoutHeadExtra(data, headExtra),
+		HeaderExtra:    headerActions(data.LanguageToggle),
+		ThemeToggle: ui8layout.ThemeToggleProps{
+			Label:              data.ThemeToggle.Label,
+			SwitchToDarkLabel:  data.ThemeToggle.SwitchToDarkLabel,
+			SwitchToLightLabel: data.ThemeToggle.SwitchToLightLabel,
+		},
+	}) {
+		@body
+	}
+}
+
+templ layoutHeadExtra(data LayoutData, headExtra templ2.Component) {
+	<script src="/static/js/hanko-frontend-sdk.js" defer></script>
+	@authConfigBlock(data)
+	if headExtra != nil {
+		@headExtra
+	}
+}
+
+templ authConfigBlock(data LayoutData) {
+	<script id="auth-config" type="application/json">
+		{ authConfigJSON(data) }
+	</script>
+}
+
+func authConfigJSON(data LayoutData) string {
+	cfg := map[string]any{
+		"hankoApiUrl":             data.HankoAPIURL,
+		"locale":                 data.Locale,
+		"allowPublicRegistration": data.Features.AllowPublicRegistration,
+		"allowOIDCRegistration":  data.Features.AllowOIDCRegistration,
+		"allowSAMLRegistration":  data.Features.AllowSAMLRegistration,
+	}
+	b, _ := json.Marshal(cfg)
+	return string(b)
+}
+
+templ headerActions(lang LanguageToggleData) {
+	<div class="ui-header-language">
+		@languageToggle(lang)
+	</div>
+}
+
+templ languageToggle(data LanguageToggleData) {
+	<button
+		type="button"
+		id="web-language-toggle"
+		class="web-language-toggle ui-header-action-btn"
+		data-default-locale={ data.DefaultLocale }
+		data-current-locale={ data.CurrentLocale }
+		data-next-locale={ data.NextLocale }
+		data-available-locales={ strings.Join(data.AvailableLocales, ",") }
+	>{ data.CurrentLabel }</button>
+}

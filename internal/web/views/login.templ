@@ -1,0 +1,48 @@
+package views
+
+templ LoginPage(data LoginPageData) {
+	@Layout(data.Layout, nil, loginBody(data))
+}
+
+templ loginBody(data LoginPageData) {
+	<main class="flex items-center justify-center min-h-[calc(100vh-4rem)] px-4">
+		<div class="w-full max-w-md">
+			<div class="ui-card p-8">
+				<h1 class="text-2xl font-semibold text-center mb-6">{ data.Strings.Title }</h1>
+				<div id="auth-app">
+					<div id="auth-loading" class="text-center py-8 text-muted-foreground">
+						{ data.Strings.Loading }
+					</div>
+					<form id="auth-login-form" class="hidden space-y-4">
+						<div class="ui-field-wrap">
+							<label class="ui-field-label" for="auth-email">{ data.Strings.EmailLabel }</label>
+							<input
+								id="auth-email"
+								type="email"
+								name="email"
+								class="ui-field"
+								autocomplete="username"
+								required
+							/>
+						</div>
+						<div id="auth-password-wrap" class="ui-field-wrap hidden">
+							<label class="ui-field-label" for="auth-password">{ data.Strings.PasswordLabel }</label>
+							<input
+								id="auth-password"
+								type="password"
+								name="password"
+								class="ui-field"
+								autocomplete="current-password"
+							/>
+						</div>
+						<div id="auth-error" class="hidden text-sm text-destructive"></div>
+						<button id="auth-submit" type="submit" class="ui-btn ui-btn-primary w-full">
+							{ data.Strings.Submit }
+						</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</main>
+	<script src="/static/js/auth-flow.js" defer></script>
+}

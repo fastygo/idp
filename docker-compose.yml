@@ -12,6 +12,7 @@ services:
       IDP_ENTITY_ID: ${IDP_ENTITY_ID:-https://idp.cybeross.ru}
       IDP_BASE_URL: ${IDP_BASE_URL:-https://idp.cybeross.ru}
       OIDC_CLIENT_SECRET_FASTYGO: ${OIDC_CLIENT_SECRET_FASTYGO}
+      IDP_HANKO_ADMIN_URL: ${IDP_HANKO_ADMIN_URL:-http://hanko:8001}
     volumes:
       - idp_keys:/app/keys
     restart: unless-stopped
