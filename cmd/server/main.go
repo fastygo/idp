@@ -47,10 +47,23 @@ func main() {
 			log.Fatalf("Failed to create SMTP sender: %v", err)
 		}
 		mailer = s
-		log.Printf("Mail: SMTP sender configured (%s:%s)", cfg.SMTP.Host, cfg.SMTP.Port)
+		log.Printf(
+			"Mail: SMTP sender configured (host=%s port=%s from=%s user=%s)",
+			cfg.SMTP.Host,
+			cfg.SMTP.Port,
+			cfg.SMTP.FromAddress,
+			cfg.SMTP.User,
+		)
 	} else {
 		mailer = mail.NewMockSender()
-		log.Printf("Mail: using mock sender (SMTP not configured)")
+		log.Printf(
+			"Mail: using mock sender (host=%q port=%q from=%q user_set=%t password_set=%t)",
+			cfg.SMTP.Host,
+			cfg.SMTP.Port,
+			cfg.SMTP.FromAddress,
+			cfg.SMTP.User != "",
+			cfg.SMTP.Password != "",
+		)
 	}
 
 	adminH := admin.NewHandlers(cfg, mailer)
