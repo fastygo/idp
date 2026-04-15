@@ -38,7 +38,24 @@
     "column_email": "Email",
     "column_id": "ID",
     "column_created": "Created",
-    "no_users": "No users found."
+    "no_users": "No users found.",
+    "nav_users": "Users",
+    "nav_mailer": "Mailer"
+  },
+  "mailer": {
+    "title": "Send Notification",
+    "to_label": "Recipient",
+    "subject_label": "Subject",
+    "body_label": "Message",
+    "submit": "Send",
+    "success": "Message sent successfully",
+    "error": "Failed to send message",
+    "log_title": "Send History",
+    "column_to": "To",
+    "column_subject": "Subject",
+    "column_sent_at": "Sent",
+    "column_status": "Status",
+    "no_messages": "No messages sent yet."
   },
   "errors": {
     "generic_title": "Error",

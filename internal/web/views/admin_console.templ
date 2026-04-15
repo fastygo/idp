@@ -10,6 +10,8 @@ templ adminHeadExtra() {
 
 templ adminConsoleBody(data AdminPageData) {
 	<main class="max-w-4xl mx-auto px-4 py-8">
+		@adminNav(data.Strings, "users")
+
 		<h1 class="text-2xl font-semibold mb-6">{ data.Strings.Title }</h1>
 
 		<section class="ui-card p-6 mb-8">

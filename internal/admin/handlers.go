@@ -11,15 +11,17 @@ import (
 	"time"
 
 	"idp-cyberos/internal/config"
+	"idp-cyberos/internal/mail"
 	"idp-cyberos/internal/web/views"
 )
 
 type Handlers struct {
-	cfg *config.Config
+	cfg    *config.Config
+	mailer mail.Sender
 }
 
-func NewHandlers(cfg *config.Config) *Handlers {
-	return &Handlers{cfg: cfg}
+func NewHandlers(cfg *config.Config, mailer mail.Sender) *Handlers {
+	return &Handlers{cfg: cfg, mailer: mailer}
 }
 
 type HankoUser struct {
@@ -117,6 +119,57 @@ func (h *Handlers) listUsers() ([]HankoUser, error) {
 	}
 
 	return users, nil
+}
+
+func (h *Handlers) HandleMailer(w http.ResponseWriter, r *http.Request) {
+	logEntries := h.convertMailLog(h.mailer.History())
+	views.RenderMailer(w, r, h.cfg, logEntries, "", false)
+}
+
+func (h *Handlers) HandleSendMail(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	to := strings.TrimSpace(r.FormValue("to"))
+	subject := strings.TrimSpace(r.FormValue("subject"))
+	body := strings.TrimSpace(r.FormValue("body"))
+
+	if to == "" || subject == "" || body == "" {
+		logEntries := h.convertMailLog(h.mailer.History())
+		views.RenderMailer(w, r, h.cfg, logEntries, "All fields are required", true)
+		return
+	}
+
+	err := h.mailer.Send(r.Context(), mail.Message{
+		To:        to,
+		Subject:   subject,
+		BodyPlain: body,
+	})
+
+	logEntries := h.convertMailLog(h.mailer.History())
+
+	if err != nil {
+		log.Printf("admin: send mail error: %v", err)
+		views.RenderMailer(w, r, h.cfg, logEntries, "Send failed: "+err.Error(), true)
+		return
+	}
+
+	views.RenderMailer(w, r, h.cfg, logEntries, "", false)
+}
+
+func (h *Handlers) convertMailLog(entries []mail.LogEntry) []views.MailLogEntry {
+	out := make([]views.MailLogEntry, len(entries))
+	for i, e := range entries {
+		out[i] = views.MailLogEntry{
+			To:      e.To,
+			Subject: e.Subject,
+			SentAt:  e.SentAt,
+			Status:  e.Status,
+		}
+	}
+	return out
 }
 
 func (h *Handlers) createUser(email string) error {

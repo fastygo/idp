@@ -63,3 +63,19 @@ type AdminPageData struct {
 	Strings i18n.AdminFixture
 	Users   []UserEntry
 }
+
+type MailLogEntry struct {
+	To      string
+	Subject string
+	SentAt  string
+	Status  string
+}
+
+type MailerPageData struct {
+	Layout     LayoutData
+	NavStrings i18n.AdminFixture
+	Strings    i18n.MailerFixture
+	Log        []MailLogEntry
+	Flash      string
+	FlashError bool
+}

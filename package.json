@@ -2,7 +2,9 @@
   "private": true,
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i internal/web/static/css/input.css -o internal/web/static/css/app.css --minify",
-    "build:sdk": "cp node_modules/@teamhanko/hanko-frontend-sdk/dist/sdk.umd.js internal/web/static/js/hanko-frontend-sdk.js"
+    "build:sdk": "cp node_modules/@teamhanko/hanko-frontend-sdk/dist/sdk.umd.js internal/web/static/js/hanko-frontend-sdk.js",
+    "build:ui8kit-js": "cat ../\\@UI8Kit/js/core.js ../\\@UI8Kit/js/theme.js ../\\@UI8Kit/js/locale.js ../\\@UI8Kit/js/dialog.js ../\\@UI8Kit/js/alert.js ../\\@UI8Kit/js/tooltip.js ../\\@UI8Kit/js/tabs.js ../\\@UI8Kit/js/combobox.js ../\\@UI8Kit/js/accordion.js > internal/web/static/js/ui8kit.js",
+    "build": "npm run build:sdk && npm run build:ui8kit-js && npm run build:css"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4",

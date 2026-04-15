@@ -1,0 +1,101 @@
+package views
+
+templ AdminMailerPage(data MailerPageData) {
+	@Layout(data.Layout, adminMailerHeadExtra(), adminMailerBody(data))
+}
+
+templ adminMailerHeadExtra() {
+	<script src="/static/js/admin.js" defer></script>
+}
+
+templ adminMailerBody(data MailerPageData) {
+	<main class="max-w-4xl mx-auto px-4 py-8">
+		@adminNav(data.NavStrings, "mailer")
+
+		<h1 class="text-2xl font-semibold mb-6">{ data.Strings.Title }</h1>
+
+		if data.Flash != "" {
+			if data.FlashError {
+				<div class="ui-alert ui-alert-destructive mb-6">{ data.Flash }</div>
+			} else {
+				<div class="ui-alert ui-alert-success mb-6">{ data.Flash }</div>
+			}
+		}
+
+		<section class="ui-card p-6 mb-8">
+			<form method="POST" action="/console/mailer" class="space-y-4">
+				<div class="ui-field-wrap">
+					<label class="ui-field-label" for="mail-to">{ data.Strings.ToLabel }</label>
+					<input
+						id="mail-to"
+						type="email"
+						name="to"
+						class="ui-field"
+						required
+						placeholder="user@example.com"
+					/>
+				</div>
+				<div class="ui-field-wrap">
+					<label class="ui-field-label" for="mail-subject">{ data.Strings.SubjectLabel }</label>
+					<input
+						id="mail-subject"
+						type="text"
+						name="subject"
+						class="ui-field"
+						required
+						placeholder="Important notification"
+					/>
+				</div>
+				<div class="ui-field-wrap">
+					<label class="ui-field-label" for="mail-body">{ data.Strings.BodyLabel }</label>
+					<textarea
+						id="mail-body"
+						name="body"
+						class="ui-field"
+						rows="6"
+						required
+					></textarea>
+				</div>
+				<button type="submit" class="ui-btn ui-btn-primary">
+					{ data.Strings.Submit }
+				</button>
+			</form>
+		</section>
+
+		<section class="ui-card p-6">
+			<h2 class="text-lg font-medium mb-4">{ data.Strings.LogTitle }</h2>
+			if len(data.Log) == 0 {
+				<p class="text-muted-foreground">{ data.Strings.NoMessages }</p>
+			} else {
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-border">
+								<th class="text-left py-2 px-3 font-medium">{ data.Strings.ColumnTo }</th>
+								<th class="text-left py-2 px-3 font-medium">{ data.Strings.ColumnSubject }</th>
+								<th class="text-left py-2 px-3 font-medium">{ data.Strings.ColumnSentAt }</th>
+								<th class="text-left py-2 px-3 font-medium">{ data.Strings.ColumnStatus }</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, entry := range data.Log {
+								<tr class="border-b border-border">
+									<td class="py-2 px-3">{ entry.To }</td>
+									<td class="py-2 px-3">{ entry.Subject }</td>
+									<td class="py-2 px-3 text-muted-foreground text-xs">{ entry.SentAt }</td>
+									<td class="py-2 px-3">
+										if entry.Status == "sent" || entry.Status == "mock" {
+											<span class="text-green-600 dark:text-green-400">{ entry.Status }</span>
+										} else {
+											<span class="text-destructive">{ entry.Status }</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		</section>
+	</main>
+}

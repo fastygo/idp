@@ -38,7 +38,24 @@
     "column_email": "Email",
     "column_id": "ID",
     "column_created": "Создан",
-    "no_users": "Пользователи не найдены."
+    "no_users": "Пользователи не найдены.",
+    "nav_users": "Пользователи",
+    "nav_mailer": "Рассылка"
+  },
+  "mailer": {
+    "title": "Отправить уведомление",
+    "to_label": "Получатель",
+    "subject_label": "Тема",
+    "body_label": "Сообщение",
+    "submit": "Отправить",
+    "success": "Сообщение отправлено",
+    "error": "Не удалось отправить сообщение",
+    "log_title": "История отправок",
+    "column_to": "Кому",
+    "column_subject": "Тема",
+    "column_sent_at": "Отправлено",
+    "column_status": "Статус",
+    "no_messages": "Сообщения ещё не отправлялись."
   },
   "errors": {
     "generic_title": "Ошибка",

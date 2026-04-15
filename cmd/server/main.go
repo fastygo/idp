@@ -11,11 +11,13 @@ import (
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
 	"idp-cyberos/internal/handlers"
+	"idp-cyberos/internal/mail"
 	"idp-cyberos/internal/saml"
 )
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	devMode := flag.Bool("dev", false, "development mode: skip admin auth, use local static paths")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -37,12 +39,35 @@ func main() {
 
 	srv := handlers.NewIdPServer(cfg, kp)
 	oidcH := srv.OIDCHandlers()
-	adminH := admin.NewHandlers(cfg)
+
+	var mailer mail.Sender
+	if cfg.SMTP.Host != "" && cfg.SMTP.User != "" {
+		s, err := mail.NewSMTPSender(cfg.SMTP)
+		if err != nil {
+			log.Fatalf("Failed to create SMTP sender: %v", err)
+		}
+		mailer = s
+		log.Printf("Mail: SMTP sender configured (%s:%s)", cfg.SMTP.Host, cfg.SMTP.Port)
+	} else {
+		mailer = mail.NewMockSender()
+		log.Printf("Mail: using mock sender (SMTP not configured)")
+	}
+
+	adminH := admin.NewHandlers(cfg, mailer)
 
 	mux := http.NewServeMux()
 
-	// Static files
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	// Static files: in Docker they live at ./static, locally at ./internal/web/static
+	staticDir := "static"
+	if *devMode {
+		staticDir = "internal/web/static"
+	}
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
+
+	// Root redirect
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/console", http.StatusFound)
+	})
 
 	// SAML endpoints
 	mux.HandleFunc("GET /metadata", saml.HandleMetadata(cfg, kp))
@@ -57,14 +82,25 @@ func main() {
 	mux.HandleFunc("GET /userinfo", oidcH.HandleUserinfo)
 	mux.HandleFunc("GET /jwks", oidcH.HandleJWKS)
 
-	// Admin console (protected)
+	// Admin console
 	adminMux := http.NewServeMux()
 	adminMux.HandleFunc("GET /console", adminH.HandleConsole)
 	adminMux.HandleFunc("POST /console/users", adminH.HandleCreateUser)
 	adminMux.HandleFunc("GET /console/users", adminH.HandleListUsers)
-	mux.Handle("/console", admin.AdminOnly(cfg, adminMux))
-	mux.Handle("/console/", admin.AdminOnly(cfg, adminMux))
+	adminMux.HandleFunc("GET /console/mailer", adminH.HandleMailer)
+	adminMux.HandleFunc("POST /console/mailer", adminH.HandleSendMail)
 
+	if *devMode {
+		mux.Handle("/console", adminMux)
+		mux.Handle("/console/", adminMux)
+	} else {
+		mux.Handle("/console", admin.AdminOnly(cfg, adminMux))
+		mux.Handle("/console/", admin.AdminOnly(cfg, adminMux))
+	}
+
+	if *devMode {
+		log.Printf("*** DEV MODE: admin auth disabled, static from %s ***", staticDir)
+	}
 	log.Printf("IdP server starting on %s (entity: %s)", cfg.ListenAddr, cfg.EntityID)
 	log.Printf("Hanko API: %s", cfg.HankoAPIURL)
 	if cfg.HankoAdminURL != "" {

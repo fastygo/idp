@@ -15,13 +15,14 @@ type Localized struct {
 }
 
 type CommonFixture struct {
-	BrandName string       `json:"brand_name"`
-	Theme     ThemeFixture `json:"theme"`
-	Language  LangFixture  `json:"language"`
-	Login     LoginFixture `json:"login"`
+	BrandName string        `json:"brand_name"`
+	Theme     ThemeFixture  `json:"theme"`
+	Language  LangFixture   `json:"language"`
+	Login     LoginFixture  `json:"login"`
 	Logout    LogoutFixture `json:"logout"`
-	Admin     AdminFixture `json:"admin"`
-	Errors    ErrorFixture `json:"errors"`
+	Admin     AdminFixture  `json:"admin"`
+	Mailer    MailerFixture `json:"mailer"`
+	Errors    ErrorFixture  `json:"errors"`
 }
 
 type LoginFixture struct {
@@ -49,6 +50,24 @@ type AdminFixture struct {
 	ColumnID        string `json:"column_id"`
 	ColumnCreated   string `json:"column_created"`
 	NoUsers         string `json:"no_users"`
+	NavUsers        string `json:"nav_users"`
+	NavMailer       string `json:"nav_mailer"`
+}
+
+type MailerFixture struct {
+	Title        string `json:"title"`
+	ToLabel      string `json:"to_label"`
+	SubjectLabel string `json:"subject_label"`
+	BodyLabel    string `json:"body_label"`
+	Submit       string `json:"submit"`
+	Success      string `json:"success"`
+	Error        string `json:"error"`
+	LogTitle     string `json:"log_title"`
+	ColumnTo     string `json:"column_to"`
+	ColumnSubject string `json:"column_subject"`
+	ColumnSentAt string `json:"column_sent_at"`
+	ColumnStatus string `json:"column_status"`
+	NoMessages   string `json:"no_messages"`
 }
 
 type ErrorFixture struct {
