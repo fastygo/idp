@@ -1,26 +1,23 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
-	"idp-cyberos/internal/admin"
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
-	"idp-cyberos/internal/handlers"
-	"idp-cyberos/internal/mail"
-	"idp-cyberos/internal/saml"
+	"idp-cyberos/internal/protocol/saml"
+	"idp-cyberos/internal/server"
+	"idp-cyberos/pkg/provider/hanko"
+	"idp-cyberos/pkg/provider/memory"
 )
 
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to config file")
-	devMode := flag.Bool("dev", false, "development mode: skip admin auth, use local static paths")
-	flag.Parse()
+	configPath := "config.yaml"
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -37,49 +34,18 @@ func main() {
 	}
 	log.Printf("IdP certificate loaded (subject: %s)", kp.Certificate.Subject.CommonName)
 
-	srv := handlers.NewIdPServer(cfg, kp)
+	creds := hanko.NewVerifier(cfg.HankoAPIURL)
+	codeStore := memory.NewCodeStore()
+	srv := server.NewIdPServer(cfg, kp, creds, codeStore)
 	oidcH := srv.OIDCHandlers()
-
-	var mailer mail.Sender
-	if cfg.SMTP.Host != "" && cfg.SMTP.User != "" {
-		s, err := mail.NewSMTPSender(cfg.SMTP)
-		if err != nil {
-			log.Fatalf("Failed to create SMTP sender: %v", err)
-		}
-		mailer = s
-		log.Printf(
-			"Mail: SMTP sender configured (host=%s port=%s from=%s user=%s)",
-			cfg.SMTP.Host,
-			cfg.SMTP.Port,
-			cfg.SMTP.FromAddress,
-			cfg.SMTP.User,
-		)
-	} else {
-		mailer = mail.NewMockSender()
-		log.Printf(
-			"Mail: using mock sender (host=%q port=%q from=%q user_set=%t password_set=%t)",
-			cfg.SMTP.Host,
-			cfg.SMTP.Port,
-			cfg.SMTP.FromAddress,
-			cfg.SMTP.User != "",
-			cfg.SMTP.Password != "",
-		)
-	}
-
-	adminH := admin.NewHandlers(cfg, mailer)
 
 	mux := http.NewServeMux()
 
-	// Static files: in Docker they live at ./static, locally at ./internal/web/static
-	staticDir := "static"
-	if *devMode {
-		staticDir = "internal/web/static"
-	}
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	// Root redirect
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/console", http.StatusFound)
+		http.Redirect(w, r, cfg.BaseURL, http.StatusFound)
 	})
 
 	// SAML endpoints
@@ -95,30 +61,8 @@ func main() {
 	mux.HandleFunc("GET /userinfo", oidcH.HandleUserinfo)
 	mux.HandleFunc("GET /jwks", oidcH.HandleJWKS)
 
-	// Admin console
-	adminMux := http.NewServeMux()
-	adminMux.HandleFunc("GET /console", adminH.HandleConsole)
-	adminMux.HandleFunc("POST /console/users", adminH.HandleCreateUser)
-	adminMux.HandleFunc("GET /console/users", adminH.HandleListUsers)
-	adminMux.HandleFunc("GET /console/mailer", adminH.HandleMailer)
-	adminMux.HandleFunc("POST /console/mailer", adminH.HandleSendMail)
-
-	if *devMode {
-		mux.Handle("/console", adminMux)
-		mux.Handle("/console/", adminMux)
-	} else {
-		mux.Handle("/console", admin.AdminOnly(cfg, adminMux))
-		mux.Handle("/console/", admin.AdminOnly(cfg, adminMux))
-	}
-
-	if *devMode {
-		log.Printf("*** DEV MODE: admin auth disabled, static from %s ***", staticDir)
-	}
 	log.Printf("IdP server starting on %s (entity: %s)", cfg.ListenAddr, cfg.EntityID)
 	log.Printf("Hanko API: %s", cfg.HankoAPIURL)
-	if cfg.HankoAdminURL != "" {
-		log.Printf("Hanko Admin API: %s", cfg.HankoAdminURL)
-	}
 	log.Printf("Service Providers (SAML): %d configured", len(cfg.SPs))
 	for _, sp := range cfg.SPs {
 		log.Printf("  - %s (%s)", sp.Name, sp.EntityID)
@@ -127,11 +71,10 @@ func main() {
 	for _, oc := range cfg.OIDCClients {
 		log.Printf("  - %s (client_id: %s)", oc.Name, oc.ClientID)
 	}
-	log.Printf("Features: public_registration=%v oidc_registration=%v saml_registration=%v admin_emails=%v",
+	log.Printf("Features: public_registration=%v oidc_registration=%v saml_registration=%v",
 		cfg.Features.AllowPublicRegistration,
 		cfg.Features.AllowOIDCRegistration,
 		cfg.Features.AllowSAMLRegistration,
-		cfg.Features.AdminEmails,
 	)
 
 	if err := http.ListenAndServe(cfg.ListenAddr, mux); err != nil {

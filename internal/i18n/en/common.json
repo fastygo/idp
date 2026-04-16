@@ -29,34 +29,6 @@
     "title": "Signing Out",
     "message": "Closing your SSO session and returning to the application."
   },
-  "admin": {
-    "title": "Admin Console",
-    "create_user": "Create User",
-    "email_label": "User Email",
-    "users_table_title": "All Users",
-    "submit_create": "Create",
-    "column_email": "Email",
-    "column_id": "ID",
-    "column_created": "Created",
-    "no_users": "No users found.",
-    "nav_users": "Users",
-    "nav_mailer": "Mailer"
-  },
-  "mailer": {
-    "title": "Send Notification",
-    "to_label": "Recipient",
-    "subject_label": "Subject",
-    "body_label": "Message",
-    "submit": "Send",
-    "success": "Message sent successfully",
-    "error": "Failed to send message",
-    "log_title": "Send History",
-    "column_to": "To",
-    "column_subject": "Subject",
-    "column_sent_at": "Sent",
-    "column_status": "Status",
-    "no_messages": "No messages sent yet."
-  },
   "errors": {
     "generic_title": "Error",
     "generic_message": "An unexpected error occurred.",

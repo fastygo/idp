@@ -23,36 +23,24 @@ type OIDCClient struct {
 }
 
 type Features struct {
-	AllowPublicRegistration bool     `yaml:"allow_public_registration"`
-	AllowOIDCRegistration   bool     `yaml:"allow_oidc_registration"`
-	AllowSAMLRegistration   bool     `yaml:"allow_saml_registration"`
-	AdminEmails             []string `yaml:"admin_emails"`
-}
-
-type SMTPConfig struct {
-	Host        string `yaml:"host"`
-	Port        string `yaml:"port"`
-	FromAddress string `yaml:"from_address"`
-	FromName    string `yaml:"from_name"`
-	User        string `yaml:"user"`
-	Password    string `yaml:"password"`
+	AllowPublicRegistration bool `yaml:"allow_public_registration"`
+	AllowOIDCRegistration   bool `yaml:"allow_oidc_registration"`
+	AllowSAMLRegistration   bool `yaml:"allow_saml_registration"`
 }
 
 type Config struct {
-	EntityID      string            `yaml:"entity_id"`
-	BaseURL       string            `yaml:"base_url"`
-	ListenAddr    string            `yaml:"listen_addr"`
-	HankoAPIURL   string            `yaml:"hanko_api_url"`
-	KeyPath       string            `yaml:"key_path"`
-	CertPath      string            `yaml:"cert_path"`
-	SessionKey    string            `yaml:"session_key"`
-	SPs           []ServiceProvider `yaml:"service_providers"`
-	OIDCClients   []OIDCClient      `yaml:"oidc_clients"`
-	Features      Features          `yaml:"features"`
-	HankoAdminURL string            `yaml:"hanko_admin_url"`
-	SMTP          SMTPConfig        `yaml:"smtp"`
-	spIndex       map[string]*ServiceProvider
-	oidcIndex     map[string]*OIDCClient
+	EntityID    string            `yaml:"entity_id"`
+	BaseURL     string            `yaml:"base_url"`
+	ListenAddr  string            `yaml:"listen_addr"`
+	HankoAPIURL string            `yaml:"hanko_api_url"`
+	KeyPath     string            `yaml:"key_path"`
+	CertPath    string            `yaml:"cert_path"`
+	SessionKey  string            `yaml:"session_key"`
+	SPs         []ServiceProvider `yaml:"service_providers"`
+	OIDCClients []OIDCClient      `yaml:"oidc_clients"`
+	Features    Features          `yaml:"features"`
+	spIndex     map[string]*ServiceProvider
+	oidcIndex   map[string]*OIDCClient
 }
 
 func Load(path string) (*Config, error) {
@@ -104,33 +92,11 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("IDP_HANKO_API_URL"); v != "" {
 		cfg.HankoAPIURL = v
 	}
-	if v := os.Getenv("IDP_HANKO_ADMIN_URL"); v != "" {
-		cfg.HankoAdminURL = v
-	}
 	if v := os.Getenv("IDP_KEY_PATH"); v != "" {
 		cfg.KeyPath = v
 	}
 	if v := os.Getenv("IDP_CERT_PATH"); v != "" {
 		cfg.CertPath = v
-	}
-
-	if v := os.Getenv("SMTP_HOST"); v != "" {
-		cfg.SMTP.Host = v
-	}
-	if v := os.Getenv("SMTP_PORT"); v != "" {
-		cfg.SMTP.Port = v
-	}
-	if v := os.Getenv("SMTP_USER"); v != "" {
-		cfg.SMTP.User = v
-	}
-	if v := os.Getenv("SMTP_PASSWORD"); v != "" {
-		cfg.SMTP.Password = v
-	}
-	if v := os.Getenv("SMTP_FROM_ADDRESS"); v != "" {
-		cfg.SMTP.FromAddress = v
-	}
-	if v := os.Getenv("SMTP_FROM_NAME"); v != "" {
-		cfg.SMTP.FromName = v
 	}
 
 	for i := range cfg.OIDCClients {
@@ -159,15 +125,6 @@ func (c *Config) FindSP(entityID string) *ServiceProvider {
 
 func (c *Config) FindOIDCClient(clientID string) *OIDCClient {
 	return c.oidcIndex[clientID]
-}
-
-func (c *Config) IsAdmin(email string) bool {
-	for _, admin := range c.Features.AdminEmails {
-		if strings.EqualFold(admin, email) {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Config) DefaultLogoutReturnURL() string {

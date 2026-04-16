@@ -115,168 +115,6 @@
   });
 })();
 (function () {
-  function ready(fn) {
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", fn);
-      return;
-    }
-    fn();
-  }
-
-  function normalizeLocale(value, allowedLocales) {
-    var locale = (value || "").toLowerCase();
-    return allowedLocales.indexOf(locale) !== -1 ? locale : "";
-  }
-
-  function parseLocales(raw) {
-    return (raw || "")
-      .split(",")
-      .map(function (item) {
-        return item.trim().toLowerCase();
-      })
-      .filter(function (item, index, list) {
-        return item && list.indexOf(item) === index;
-      });
-  }
-
-  function browserLocales() {
-    var values = [];
-
-    if (Array.isArray(navigator.languages)) {
-      values = values.concat(navigator.languages);
-    }
-
-    if (typeof navigator.language === "string") {
-      values.push(navigator.language);
-    }
-
-    return values
-      .map(function (item) {
-        return String(item || "")
-          .trim()
-          .toLowerCase()
-          .replace(/_/g, "-");
-      })
-      .filter(function (item, index, list) {
-        return item && list.indexOf(item) === index;
-      });
-  }
-
-  function detectPreferredLocale(allowedLocales, defaultLocale) {
-    var locales = browserLocales();
-
-    for (var i = 0; i < locales.length; i += 1) {
-      var locale = locales[i];
-      if (allowedLocales.indexOf(locale) !== -1) {
-        return locale;
-      }
-
-      var baseLocale = locale.split("-")[0];
-      if (allowedLocales.indexOf(baseLocale) !== -1) {
-        return baseLocale;
-      }
-    }
-
-    return defaultLocale;
-  }
-
-  function buttonDefaultLocale(toggle) {
-    var available = parseLocales(toggle.dataset.availableLocales);
-    return normalizeLocale(toggle.dataset.defaultLocale, available) || available[0] || "";
-  }
-
-  function buttonCurrentLocale(toggle, availableLocales) {
-    return normalizeLocale(toggle.dataset.currentLocale, availableLocales) || buttonDefaultLocale(toggle);
-  }
-
-  function buttonNextLocale(toggle, currentLocale) {
-    var availableLocales = parseLocales(toggle.dataset.availableLocales);
-    var next = currentLocale;
-
-    for (var i = 0; i < availableLocales.length; i += 1) {
-      if (availableLocales[i] !== currentLocale) {
-        next = availableLocales[i];
-        break;
-      }
-    }
-
-    return next;
-  }
-
-  function readStoredLocale(toggle) {
-    var availableLocales = parseLocales(toggle.dataset.availableLocales);
-    try {
-      return normalizeLocale(localStorage.getItem("framework-language"), availableLocales);
-    } catch (_) {
-      return "";
-    }
-  }
-
-  function writeStoredLocale(locale) {
-    try {
-      localStorage.setItem("framework-language", locale);
-    } catch (_) {}
-  }
-
-  function localeURL(toggle, locale) {
-    var next = new URL(window.location.href);
-    if (locale === buttonDefaultLocale(toggle)) {
-      next.searchParams.delete("lang");
-    } else {
-      next.searchParams.set("lang", locale);
-    }
-    return next.toString();
-  }
-
-  ready(function () {
-    var toggle = document.getElementById("web-language-toggle");
-
-    if (!toggle) {
-      return;
-    }
-
-    var availableLocales = parseLocales(toggle.dataset.availableLocales);
-    var defaultLocale = buttonDefaultLocale(toggle);
-    var currentLocale = buttonCurrentLocale(toggle, availableLocales);
-    var hasExplicitLocaleParam = new URL(window.location.href).searchParams.has("lang");
-    var storedLocale = readStoredLocale(toggle);
-
-    if (hasExplicitLocaleParam) {
-      writeStoredLocale(currentLocale);
-    } else {
-      var preferredLocale = storedLocale || detectPreferredLocale(availableLocales, defaultLocale);
-      if (preferredLocale) {
-        writeStoredLocale(preferredLocale);
-      }
-
-      if (
-        preferredLocale &&
-        preferredLocale !== defaultLocale &&
-        preferredLocale !== currentLocale
-      ) {
-        var targetURL = localeURL(toggle, preferredLocale);
-        if (targetURL !== window.location.href) {
-          window.location.replace(targetURL);
-          return;
-        }
-      }
-
-      if (preferredLocale) {
-        currentLocale = preferredLocale;
-      }
-    }
-
-    toggle.addEventListener("click", function () {
-      var nextLocale = buttonNextLocale(toggle, currentLocale);
-      if (!nextLocale || nextLocale === currentLocale) {
-        return;
-      }
-      writeStoredLocale(nextLocale);
-      window.location.assign(localeURL(toggle, nextLocale));
-    });
-  });
-})();
-(function () {
   var namespace = window.ui8kit || {};
   window.ui8kit = namespace;
   if (namespace.dialog) {
@@ -479,21 +317,7 @@
 (function () {
   var namespace = window.ui8kit || {};
   window.ui8kit = namespace;
-  if (namespace.alert) {
-    return;
-  }
-
-  namespace.alert = {
-    init: function () {
-      // Placeholder for future alert enhancement logic.
-      return;
-    },
-  };
-})();
-(function () {
-  var namespace = window.ui8kit || {};
-  window.ui8kit = namespace;
-  if (namespace.tooltip) {
+  if (namespace.accordion) {
     return;
   }
 
@@ -505,46 +329,87 @@
     fn();
   }
 
-  function openTooltip(tooltip) {
-    var content = tooltip.querySelector('[role="tooltip"]');
-    if (!content) {
-      return;
-    }
-    content.removeAttribute("hidden");
-    tooltip.setAttribute("data-state", "open");
-    content.setAttribute("aria-hidden", "false");
+  function getAccordionRoots() {
+    return document.querySelectorAll('[data-ui8kit="accordion"]');
   }
 
-  function closeTooltip(tooltip) {
-    var content = tooltip.querySelector('[role="tooltip"]');
-    if (!content) {
+  function isMultiple(root) {
+    return (root.getAttribute("data-accordion-type") || "single") === "multiple";
+  }
+
+  function setItemState(item, open) {
+    var trigger = item.querySelector('[data-ui8kit-accordion-trigger]');
+    var panel = item.querySelector('[data-ui8kit-accordion-content]');
+    if (!trigger || !panel) {
       return;
     }
-    content.setAttribute("hidden", "hidden");
-    tooltip.setAttribute("data-state", "closed");
-    content.setAttribute("aria-hidden", "true");
+    item.setAttribute("data-state", open ? "open" : "closed");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    if (panel) {
+      if (open) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "hidden");
+      }
+    }
+  }
+
+  function closeOthers(root, currentItem) {
+    var items = root.querySelectorAll('[data-accordion-item]');
+    for (var i = 0; i < items.length; i += 1) {
+      if (items[i] !== currentItem) {
+        setItemState(items[i], false);
+      }
+    }
+  }
+
+  function toggle(root, trigger, panel, item, open) {
+    var current = item.getAttribute("data-state") === "open";
+    var next = typeof open === "boolean" ? open : !current;
+    if (!isMultiple(root)) {
+      closeOthers(root, item);
+    }
+    setItemState(item, next);
   }
 
   ready(function () {
-    var tooltips = document.querySelectorAll('[data-ui8kit="tooltip"]');
-    for (var i = 0; i < tooltips.length; i += 1) {
-      var root = tooltips[i];
-      root.addEventListener("mouseenter", function () {
-        openTooltip(this);
-      });
-      root.addEventListener("focusin", function () {
-        openTooltip(this);
-      });
-      root.addEventListener("mouseleave", function () {
-        closeTooltip(this);
-      });
-      root.addEventListener("focusout", function () {
-        closeTooltip(this);
-      });
+    var roots = getAccordionRoots();
+    for (var i = 0; i < roots.length; i += 1) {
+      var root = roots[i];
+      var items = root.querySelectorAll('[data-accordion-item]');
+      for (var j = 0; j < items.length; j += 1) {
+        var item = items[j];
+        var trigger = item.querySelector('[data-ui8kit-accordion-trigger]');
+        var panel = item.querySelector('[data-ui8kit-accordion-content]');
+        if (!trigger || !panel) {
+          continue;
+        }
+        var openByDefault = item.getAttribute("data-state") === "open";
+        setItemState(item, openByDefault);
+        trigger.setAttribute("type", "button");
+        trigger.addEventListener("click", function (evt) {
+          evt.preventDefault();
+          var itemNode = evt.currentTarget.closest('[data-accordion-item]');
+          if (!itemNode) {
+            return;
+          }
+          var accordionRoot = evt.currentTarget.closest('[data-ui8kit="accordion"]');
+          toggle(accordionRoot, evt.currentTarget, itemNode.querySelector('[data-ui8kit-accordion-content]'), itemNode);
+        });
+        trigger.addEventListener("keydown", function (evt) {
+          if (evt.key !== "Enter" && evt.key !== " ") {
+            return;
+          }
+          evt.preventDefault();
+          evt.currentTarget.click();
+        });
+      }
     }
   });
 
-  namespace.tooltip = { init: function () {} };
+  namespace.accordion = { init: function () {} };
 })();
 (function () {
   var namespace = window.ui8kit || {};
@@ -848,7 +713,7 @@
 (function () {
   var namespace = window.ui8kit || {};
   window.ui8kit = namespace;
-  if (namespace.accordion) {
+  if (namespace.tooltip) {
     return;
   }
 
@@ -860,85 +725,220 @@
     fn();
   }
 
-  function getAccordionRoots() {
-    return document.querySelectorAll('[data-ui8kit="accordion"]');
-  }
-
-  function isMultiple(root) {
-    return (root.getAttribute("data-accordion-type") || "single") === "multiple";
-  }
-
-  function setItemState(item, open) {
-    var trigger = item.querySelector('[data-ui8kit-accordion-trigger]');
-    var panel = item.querySelector('[data-ui8kit-accordion-content]');
-    if (!trigger || !panel) {
+  function openTooltip(tooltip) {
+    var content = tooltip.querySelector('[role="tooltip"]');
+    if (!content) {
       return;
     }
-    item.setAttribute("data-state", open ? "open" : "closed");
-    if (trigger) {
-      trigger.setAttribute("aria-expanded", open ? "true" : "false");
-    }
-    if (panel) {
-      if (open) {
-        panel.removeAttribute("hidden");
-      } else {
-        panel.setAttribute("hidden", "hidden");
-      }
-    }
+    content.removeAttribute("hidden");
+    tooltip.setAttribute("data-state", "open");
+    content.setAttribute("aria-hidden", "false");
   }
 
-  function closeOthers(root, currentItem) {
-    var items = root.querySelectorAll('[data-accordion-item]');
-    for (var i = 0; i < items.length; i += 1) {
-      if (items[i] !== currentItem) {
-        setItemState(items[i], false);
-      }
+  function closeTooltip(tooltip) {
+    var content = tooltip.querySelector('[role="tooltip"]');
+    if (!content) {
+      return;
     }
-  }
-
-  function toggle(root, trigger, panel, item, open) {
-    var current = item.getAttribute("data-state") === "open";
-    var next = typeof open === "boolean" ? open : !current;
-    if (!isMultiple(root)) {
-      closeOthers(root, item);
-    }
-    setItemState(item, next);
+    content.setAttribute("hidden", "hidden");
+    tooltip.setAttribute("data-state", "closed");
+    content.setAttribute("aria-hidden", "true");
   }
 
   ready(function () {
-    var roots = getAccordionRoots();
-    for (var i = 0; i < roots.length; i += 1) {
-      var root = roots[i];
-      var items = root.querySelectorAll('[data-accordion-item]');
-      for (var j = 0; j < items.length; j += 1) {
-        var item = items[j];
-        var trigger = item.querySelector('[data-ui8kit-accordion-trigger]');
-        var panel = item.querySelector('[data-ui8kit-accordion-content]');
-        if (!trigger || !panel) {
-          continue;
-        }
-        var openByDefault = item.getAttribute("data-state") === "open";
-        setItemState(item, openByDefault);
-        trigger.setAttribute("type", "button");
-        trigger.addEventListener("click", function (evt) {
-          evt.preventDefault();
-          var itemNode = evt.currentTarget.closest('[data-accordion-item]');
-          if (!itemNode) {
-            return;
-          }
-          var accordionRoot = evt.currentTarget.closest('[data-ui8kit="accordion"]');
-          toggle(accordionRoot, evt.currentTarget, itemNode.querySelector('[data-ui8kit-accordion-content]'), itemNode);
-        });
-        trigger.addEventListener("keydown", function (evt) {
-          if (evt.key !== "Enter" && evt.key !== " ") {
-            return;
-          }
-          evt.preventDefault();
-          evt.currentTarget.click();
-        });
-      }
+    var tooltips = document.querySelectorAll('[data-ui8kit="tooltip"]');
+    for (var i = 0; i < tooltips.length; i += 1) {
+      var root = tooltips[i];
+      root.addEventListener("mouseenter", function () {
+        openTooltip(this);
+      });
+      root.addEventListener("focusin", function () {
+        openTooltip(this);
+      });
+      root.addEventListener("mouseleave", function () {
+        closeTooltip(this);
+      });
+      root.addEventListener("focusout", function () {
+        closeTooltip(this);
+      });
     }
   });
 
-  namespace.accordion = { init: function () {} };
+  namespace.tooltip = { init: function () {} };
+})();
+(function () {
+  var namespace = window.ui8kit || {};
+  window.ui8kit = namespace;
+  if (namespace.alert) {
+    return;
+  }
+
+  namespace.alert = {
+    init: function () {
+      // Placeholder for future alert enhancement logic.
+      return;
+    },
+  };
+})();
+(function () {
+  function ready(fn) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", fn);
+      return;
+    }
+    fn();
+  }
+
+  function normalizeLocale(value, allowedLocales) {
+    var locale = (value || "").toLowerCase();
+    return allowedLocales.indexOf(locale) !== -1 ? locale : "";
+  }
+
+  function parseLocales(raw) {
+    return (raw || "")
+      .split(",")
+      .map(function (item) {
+        return item.trim().toLowerCase();
+      })
+      .filter(function (item, index, list) {
+        return item && list.indexOf(item) === index;
+      });
+  }
+
+  function browserLocales() {
+    var values = [];
+
+    if (Array.isArray(navigator.languages)) {
+      values = values.concat(navigator.languages);
+    }
+
+    if (typeof navigator.language === "string") {
+      values.push(navigator.language);
+    }
+
+    return values
+      .map(function (item) {
+        return String(item || "")
+          .trim()
+          .toLowerCase()
+          .replace(/_/g, "-");
+      })
+      .filter(function (item, index, list) {
+        return item && list.indexOf(item) === index;
+      });
+  }
+
+  function detectPreferredLocale(allowedLocales, defaultLocale) {
+    var locales = browserLocales();
+
+    for (var i = 0; i < locales.length; i += 1) {
+      var locale = locales[i];
+      if (allowedLocales.indexOf(locale) !== -1) {
+        return locale;
+      }
+
+      var baseLocale = locale.split("-")[0];
+      if (allowedLocales.indexOf(baseLocale) !== -1) {
+        return baseLocale;
+      }
+    }
+
+    return defaultLocale;
+  }
+
+  function buttonDefaultLocale(toggle) {
+    var available = parseLocales(toggle.dataset.availableLocales);
+    return normalizeLocale(toggle.dataset.defaultLocale, available) || available[0] || "";
+  }
+
+  function buttonCurrentLocale(toggle, availableLocales) {
+    return normalizeLocale(toggle.dataset.currentLocale, availableLocales) || buttonDefaultLocale(toggle);
+  }
+
+  function buttonNextLocale(toggle, currentLocale) {
+    var availableLocales = parseLocales(toggle.dataset.availableLocales);
+    var next = currentLocale;
+
+    for (var i = 0; i < availableLocales.length; i += 1) {
+      if (availableLocales[i] !== currentLocale) {
+        next = availableLocales[i];
+        break;
+      }
+    }
+
+    return next;
+  }
+
+  function readStoredLocale(toggle) {
+    var availableLocales = parseLocales(toggle.dataset.availableLocales);
+    try {
+      return normalizeLocale(localStorage.getItem("framework-language"), availableLocales);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function writeStoredLocale(locale) {
+    try {
+      localStorage.setItem("framework-language", locale);
+    } catch (_) {}
+  }
+
+  function localeURL(toggle, locale) {
+    var next = new URL(window.location.href);
+    if (locale === buttonDefaultLocale(toggle)) {
+      next.searchParams.delete("lang");
+    } else {
+      next.searchParams.set("lang", locale);
+    }
+    return next.toString();
+  }
+
+  ready(function () {
+    var toggle = document.getElementById("web-language-toggle");
+
+    if (!toggle) {
+      return;
+    }
+
+    var availableLocales = parseLocales(toggle.dataset.availableLocales);
+    var defaultLocale = buttonDefaultLocale(toggle);
+    var currentLocale = buttonCurrentLocale(toggle, availableLocales);
+    var hasExplicitLocaleParam = new URL(window.location.href).searchParams.has("lang");
+    var storedLocale = readStoredLocale(toggle);
+
+    if (hasExplicitLocaleParam) {
+      writeStoredLocale(currentLocale);
+    } else {
+      var preferredLocale = storedLocale || detectPreferredLocale(availableLocales, defaultLocale);
+      if (preferredLocale) {
+        writeStoredLocale(preferredLocale);
+      }
+
+      if (
+        preferredLocale &&
+        preferredLocale !== defaultLocale &&
+        preferredLocale !== currentLocale
+      ) {
+        var targetURL = localeURL(toggle, preferredLocale);
+        if (targetURL !== window.location.href) {
+          window.location.replace(targetURL);
+          return;
+        }
+      }
+
+      if (preferredLocale) {
+        currentLocale = preferredLocale;
+      }
+    }
+
+    toggle.addEventListener("click", function () {
+      var nextLocale = buttonNextLocale(toggle, currentLocale);
+      if (!nextLocale || nextLocale === currentLocale) {
+        return;
+      }
+      writeStoredLocale(nextLocale);
+      window.location.assign(localeURL(toggle, nextLocale));
+    });
+  });
 })();

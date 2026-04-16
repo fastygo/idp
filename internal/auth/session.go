@@ -172,19 +172,6 @@ func ClearOIDCPendingRequest(w http.ResponseWriter) {
 	})
 }
 
-func ExtractHankoToken(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
-	}
-	if cookie, err := r.Cookie("hanko"); err == nil {
-		return cookie.Value
-	}
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token
-	}
-	return ""
-}
-
 func SignedEncode(data any, key string) string {
 	payload, _ := json.Marshal(data)
 	b64 := base64.RawURLEncoding.EncodeToString(payload)

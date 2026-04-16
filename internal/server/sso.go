@@ -1,4 +1,4 @@
-package handlers
+package server
 
 import (
 	"html/template"
@@ -8,33 +8,33 @@ import (
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
-	"idp-cyberos/internal/oidc"
-	"idp-cyberos/internal/saml"
+	"idp-cyberos/internal/protocol/oidc"
+	"idp-cyberos/internal/protocol/saml"
 	"idp-cyberos/internal/web/views"
+	"idp-cyberos/pkg/provider"
+	hankoprovider "idp-cyberos/pkg/provider/hanko"
 )
 
 type IdPServer struct {
-	cfg       *config.Config
-	kp        *auth.IdPKeyPair
-	jwt       *auth.JWTVerifier
-	oidc      *oidc.Handlers
-	codeStore *oidc.CodeStore
-	postTpl   *template.Template
+	cfg        *config.Config
+	kp         *auth.IdPKeyPair
+	verifier   provider.CredentialVerifier
+	oidc       *oidc.Handlers
+	postTpl    *template.Template
+	flowConfig provider.FlowConfig
 }
 
-func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair) *IdPServer {
+func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, verifier provider.CredentialVerifier, codeStore provider.AuthCodeStore) *IdPServer {
 	tplDir := "templates"
 	postTpl := template.Must(template.ParseFiles(filepath.Join(tplDir, "postform.html")))
 
-	codeStore := oidc.NewCodeStore()
-
 	return &IdPServer{
-		cfg:       cfg,
-		kp:        kp,
-		jwt:       auth.NewJWTVerifier(cfg.HankoAPIURL),
-		oidc:      oidc.NewHandlers(cfg, kp, codeStore),
-		codeStore: codeStore,
-		postTpl:   postTpl,
+		cfg:        cfg,
+		kp:         kp,
+		verifier:   verifier,
+		oidc:       oidc.NewHandlers(cfg, kp, codeStore),
+		postTpl:    postTpl,
+		flowConfig: verifier.FlowConfig(),
 	}
 }
 
@@ -65,20 +65,20 @@ func (s *IdPServer) HandleSSO(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractHankoToken(r)
+	tokenStr := hankoprovider.ExtractToken(r, s.flowConfig.CookieName)
 	if tokenStr == "" {
 		http.Error(w, "Missing authentication", http.StatusUnauthorized)
 		return
 	}
 
-	claims, err := s.jwt.VerifyToken(tokenStr)
+	claims, err := s.verifier.VerifyToken(tokenStr)
 	if err != nil {
 		log.Printf("JWT verification failed: %v", err)
 		http.Error(w, "Authentication failed", http.StatusUnauthorized)
 		return
 	}
 
-	email := claims.Email.Address
+	email := claims.Email
 	if email == "" {
 		http.Error(w, "No email in token", http.StatusBadRequest)
 		return
@@ -143,7 +143,7 @@ func (s *IdPServer) issueResponse(w http.ResponseWriter, req *saml.ParsedRequest
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	s.postTpl.Execute(w, map[string]string{
+	_ = s.postTpl.Execute(w, map[string]string{
 		"ACSUrl":       req.SP.ACSUrl,
 		"SAMLResponse": samlResp,
 		"RelayState":   req.RelayState,

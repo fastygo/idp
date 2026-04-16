@@ -11,6 +11,8 @@ import (
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
+	"idp-cyberos/pkg/provider"
+	"idp-cyberos/pkg/provider/memory"
 )
 
 func generateTestKeyPair(t *testing.T) *auth.IdPKeyPair {
@@ -42,7 +44,7 @@ func newTestOIDCHandlers(t *testing.T) (*Handlers, *config.Config) {
 	}
 
 	cfg.BuildIndexes()
-	codeStore := NewCodeStore()
+	codeStore := memory.NewCodeStore()
 	h := NewHandlers(cfg, kp, codeStore)
 	return h, cfg
 }
@@ -112,8 +114,8 @@ func TestOIDCJWKS(t *testing.T) {
 func TestOIDCTokenExchange(t *testing.T) {
 	h, cfg := newTestOIDCHandlers(t)
 
-	code := GenerateCode()
-	h.codeStore.Save(&AuthCode{
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&provider.AuthCode{
 		Code:        code,
 		ClientID:    "testclient",
 		RedirectURI: "https://app.test.local/callback",
@@ -160,8 +162,8 @@ func TestOIDCTokenExchange(t *testing.T) {
 func TestOIDCTokenReplay(t *testing.T) {
 	h, _ := newTestOIDCHandlers(t)
 
-	code := GenerateCode()
-	h.codeStore.Save(&AuthCode{
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&provider.AuthCode{
 		Code:        code,
 		ClientID:    "testclient",
 		RedirectURI: "https://app.test.local/callback",
@@ -198,8 +200,8 @@ func TestOIDCTokenReplay(t *testing.T) {
 func TestOIDCTokenWrongSecret(t *testing.T) {
 	h, _ := newTestOIDCHandlers(t)
 
-	code := GenerateCode()
-	h.codeStore.Save(&AuthCode{
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&provider.AuthCode{
 		Code:        code,
 		ClientID:    "testclient",
 		RedirectURI: "https://app.test.local/callback",

@@ -1,5 +1,6 @@
 .cursor
 .manual
+.project/
 .env
 env.*
 **/*.exe

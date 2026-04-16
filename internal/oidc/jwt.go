@@ -107,3 +107,13 @@ func PublicKeyJWK(kp *auth.IdPKeyPair) map[string]string {
 		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
 	}
 }
+
+func Base64URLDecode(s string) ([]byte, error) {
+	switch len(s) % 4 {
+	case 2:
+		s += "=="
+	case 3:
+		s += "="
+	}
+	return base64.URLEncoding.DecodeString(s)
+}

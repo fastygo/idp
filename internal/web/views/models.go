@@ -1,8 +1,6 @@
 package views
 
 import (
-	"time"
-
 	"idp-cyberos/internal/config"
 	"idp-cyberos/internal/i18n"
 )
@@ -35,8 +33,8 @@ type LayoutData struct {
 }
 
 type LoginPageData struct {
-	Layout   LayoutData
-	Strings  i18n.LoginFixture
+	Layout  LayoutData
+	Strings i18n.LoginFixture
 }
 
 type LogoutPageData struct {
@@ -49,33 +47,4 @@ type ErrorPageData struct {
 	Layout  LayoutData
 	Strings i18n.ErrorFixture
 	Message string
-}
-
-type UserEntry struct {
-	ID        string
-	Email     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-type AdminPageData struct {
-	Layout  LayoutData
-	Strings i18n.AdminFixture
-	Users   []UserEntry
-}
-
-type MailLogEntry struct {
-	To      string
-	Subject string
-	SentAt  string
-	Status  string
-}
-
-type MailerPageData struct {
-	Layout     LayoutData
-	NavStrings i18n.AdminFixture
-	Strings    i18n.MailerFixture
-	Log        []MailLogEntry
-	Flash      string
-	FlashError bool
 }

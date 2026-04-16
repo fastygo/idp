@@ -14,15 +14,17 @@ import (
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
+	"idp-cyberos/pkg/provider"
+	"idp-cyberos/pkg/provider/memory"
 )
 
 type Handlers struct {
 	cfg       *config.Config
 	kp        *auth.IdPKeyPair
-	codeStore *CodeStore
+	codeStore provider.AuthCodeStore
 }
 
-func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore *CodeStore) *Handlers {
+func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore provider.AuthCodeStore) *Handlers {
 	return &Handlers{
 		cfg:       cfg,
 		kp:        kp,
@@ -33,18 +35,18 @@ func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore *CodeStore) 
 func (h *Handlers) HandleDiscovery(w http.ResponseWriter, r *http.Request) {
 	base := strings.TrimRight(h.cfg.BaseURL, "/")
 	doc := map[string]any{
-		"issuer":                 base,
-		"authorization_endpoint": base + "/authorize",
-		"token_endpoint":         base + "/token",
-		"userinfo_endpoint":      base + "/userinfo",
-		"jwks_uri":               base + "/jwks",
-		"response_types_supported": []string{"code"},
-		"subject_types_supported":  []string{"public"},
+		"issuer":                                base,
+		"authorization_endpoint":                base + "/authorize",
+		"token_endpoint":                        base + "/token",
+		"userinfo_endpoint":                     base + "/userinfo",
+		"jwks_uri":                              base + "/jwks",
+		"response_types_supported":              []string{"code"},
+		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
-		"scopes_supported":       []string{"openid", "email"},
-		"grant_types_supported":  []string{"authorization_code"},
+		"scopes_supported":                      []string{"openid", "email"},
+		"grant_types_supported":                 []string{"authorization_code"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
-		"claims_supported":       []string{"sub", "email", "iss", "aud", "exp", "iat"},
+		"claims_supported":                      []string{"sub", "email", "iss", "aud", "exp", "iat"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -97,8 +99,8 @@ func (h *Handlers) HandleAuthorize(showLogin ShowLoginFunc) http.HandlerFunc {
 }
 
 func (h *Handlers) IssueCode(w http.ResponseWriter, r *http.Request, client *config.OIDCClient, redirectURI, state, nonce, scope, email string) {
-	code := GenerateCode()
-	h.codeStore.Save(&AuthCode{
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&provider.AuthCode{
 		Code:        code,
 		ClientID:    client.ClientID,
 		RedirectURI: redirectURI,
@@ -150,7 +152,11 @@ func (h *Handlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ac := h.codeStore.Consume(code)
+	ac, err := h.codeStore.Consume(code)
+	if err != nil {
+		tokenError(w, "server_error", "code store failure")
+		return
+	}
 	if ac == nil {
 		tokenError(w, "invalid_grant", "code expired or already used")
 		return
@@ -219,7 +225,7 @@ func (h *Handlers) verifyAccessToken(tokenStr string) (*AccessTokenClaims, error
 		return nil, http.ErrNoCookie
 	}
 
-	payloadJSON, err := auth.Base64URLDecode(parts[1])
+	payloadJSON, err := Base64URLDecode(parts[1])
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +239,7 @@ func (h *Handlers) verifyAccessToken(tokenStr string) (*AccessTokenClaims, error
 		return nil, http.ErrNoCookie
 	}
 
-	sigBytes, err := auth.Base64URLDecode(parts[2])
+	sigBytes, err := Base64URLDecode(parts[2])
 	if err != nil {
 		return nil, err
 	}

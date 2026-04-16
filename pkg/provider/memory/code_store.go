@@ -1,52 +1,45 @@
-package oidc
+package memory
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
 	"time"
-)
 
-type AuthCode struct {
-	Code        string
-	ClientID    string
-	RedirectURI string
-	Email       string
-	Sub         string
-	Nonce       string
-	ExpiresAt   time.Time
-}
+	"idp-cyberos/pkg/provider"
+)
 
 type CodeStore struct {
 	mu    sync.Mutex
-	codes map[string]*AuthCode
+	codes map[string]*provider.AuthCode
 }
 
 func NewCodeStore() *CodeStore {
-	return &CodeStore{codes: make(map[string]*AuthCode)}
+	return &CodeStore{codes: make(map[string]*provider.AuthCode)}
 }
 
-func (s *CodeStore) Save(ac *AuthCode) {
+func (s *CodeStore) Save(ac *provider.AuthCode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.codes[ac.Code] = ac
+	return nil
 }
 
-func (s *CodeStore) Consume(code string) *AuthCode {
+func (s *CodeStore) Consume(code string) (*provider.AuthCode, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ac, ok := s.codes[code]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	delete(s.codes, code)
 	if time.Now().After(ac.ExpiresAt) {
-		return nil
+		return nil, nil
 	}
-	return ac
+	return ac, nil
 }
 
-func (s *CodeStore) Cleanup() {
+func (s *CodeStore) Cleanup() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
@@ -55,6 +48,7 @@ func (s *CodeStore) Cleanup() {
 			delete(s.codes, k)
 		}
 	}
+	return nil
 }
 
 func GenerateCode() string {

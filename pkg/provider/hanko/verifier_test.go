@@ -1,4 +1,4 @@
-package auth
+package hanko
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestHankoEmailClaimUnmarshalString(t *testing.T) {
-	var claims HankoClaims
+	var claims hankoClaims
 	if err := json.Unmarshal([]byte(`{"sub":"u1","email":"user@example.com","exp":123}`), &claims); err != nil {
 		t.Fatalf("unmarshal claims: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestHankoEmailClaimUnmarshalString(t *testing.T) {
 }
 
 func TestHankoEmailClaimUnmarshalObject(t *testing.T) {
-	var claims HankoClaims
+	var claims hankoClaims
 	payload := `{
 		"sub":"u1",
 		"email":{

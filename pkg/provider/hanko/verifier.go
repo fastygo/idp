@@ -1,4 +1,4 @@
-package auth
+package hanko
 
 import (
 	"crypto"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"idp-cyberos/pkg/core"
 )
 
 type JWKSet struct {
@@ -27,20 +29,20 @@ type JWK struct {
 	E   string `json:"e"`
 }
 
-type HankoClaims struct {
-	Sub   string         `json:"sub"`
-	Email HankoEmailClaim `json:"email"`
-	Exp   int64          `json:"exp"`
-	Iss   string         `json:"iss"`
+type hankoClaims struct {
+	Sub   string          `json:"sub"`
+	Email hankoEmailClaim `json:"email"`
+	Exp   int64           `json:"exp"`
+	Iss   string          `json:"iss"`
 }
 
-type HankoEmailClaim struct {
+type hankoEmailClaim struct {
 	Address    string `json:"address"`
 	IsPrimary  bool   `json:"is_primary"`
 	IsVerified bool   `json:"is_verified"`
 }
 
-func (c *HankoEmailClaim) UnmarshalJSON(data []byte) error {
+func (c *hankoEmailClaim) UnmarshalJSON(data []byte) error {
 	var address string
 	if err := json.Unmarshal(data, &address); err == nil {
 		c.Address = address
@@ -77,7 +79,11 @@ func NewJWTVerifier(hankoAPIURL string) *JWTVerifier {
 	}
 }
 
-func (v *JWTVerifier) VerifyToken(tokenStr string) (*HankoClaims, error) {
+func (v *Verifier) VerifyToken(token string) (*core.IdentityClaims, error) {
+	return v.jwtVerifier.VerifyToken(token)
+}
+
+func (v *JWTVerifier) VerifyToken(tokenStr string) (*core.IdentityClaims, error) {
 	parts := strings.Split(tokenStr, ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT format")
@@ -118,7 +124,7 @@ func (v *JWTVerifier) VerifyToken(tokenStr string) (*HankoClaims, error) {
 		return nil, fmt.Errorf("decode payload: %w", err)
 	}
 
-	var claims HankoClaims
+	var claims hankoClaims
 	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
 	}
@@ -127,7 +133,13 @@ func (v *JWTVerifier) VerifyToken(tokenStr string) (*HankoClaims, error) {
 		return nil, fmt.Errorf("token expired")
 	}
 
-	return &claims, nil
+	return &core.IdentityClaims{
+		Sub:           claims.Sub,
+		Email:         claims.Email.Address,
+		EmailVerified: claims.Email.IsVerified,
+		Exp:           claims.Exp,
+		Issuer:        claims.Iss,
+	}, nil
 }
 
 func (v *JWTVerifier) getKey(kid string) (*rsa.PublicKey, error) {

@@ -19,20 +19,7 @@ oidc_clients:
       - "https://fastygo.ru/auth/callback"
     name: "fastygo"
 
-hanko_admin_url: "http://hanko:8001"
-
 features:
   allow_public_registration: false
   allow_oidc_registration: false
   allow_saml_registration: true
-  admin_emails:
-    - "admin@cybeross.ru"
-
-smtp:
-  host: "postbox.cloud.yandex.net"
-  port: "587"
-  from_address: "noreply@cybeross.ru"
-  from_name: "CyberOS"
-  # Set via SMTP_USER / SMTP_PASSWORD env vars; do not commit credentials.
-  user: ""
-  password: ""
