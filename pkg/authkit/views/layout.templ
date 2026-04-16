@@ -1,0 +1,73 @@
+package views
+
+import (
+	"strings"
+
+	templ2 "github.com/a-h/templ"
+	ui8layout "github.com/fastygo/ui8kit/layout"
+)
+
+templ Layout(data LayoutData, headExtra templ2.Component, body templ2.Component) {
+	@ui8layout.Shell(ui8layout.ShellProps{
+		Title:          data.Title,
+		Lang:           data.Locale,
+		BrandName:      data.BrandName,
+		Active:         data.Active,
+		MarketingShell: true,
+		HeadExtra:      layoutHeadExtra(data, headExtra),
+		HeaderExtra:    headerActions(data.LanguageToggle),
+		ThemeToggle: ui8layout.ThemeToggleProps{
+			Label:              data.ThemeToggle.Label,
+			SwitchToDarkLabel:  data.ThemeToggle.SwitchToDarkLabel,
+			SwitchToLightLabel: data.ThemeToggle.SwitchToLightLabel,
+		},
+	}) {
+		@body
+	}
+}
+
+templ layoutHeadExtra(data LayoutData, headExtra templ2.Component) {
+	if data.Flow.SDKScript != "" {
+		<script src={ data.Flow.SDKScript } defer></script>
+	}
+	@authConfigBlock(data)
+	if headExtra != nil {
+		@headExtra
+	}
+}
+
+templ authConfigBlock(data LayoutData) {
+	@templ2.JSONScript("auth-config", authConfigData(data))
+}
+
+func authConfigData(data LayoutData) map[string]any {
+	return map[string]any{
+		"apiUrl":      data.Flow.APIEndpoint,
+		"logoutPath":  data.Flow.LogoutPath,
+		"locale":      data.Locale,
+		"successRedirect": "/sso/complete",
+		"features": map[string]any{
+			"allowPublicRegistration": data.Features.AllowPublicRegistration,
+			"allowOIDCRegistration":   data.Features.AllowOIDCRegistration,
+			"allowSAMLRegistration":   data.Features.AllowSAMLRegistration,
+		},
+	}
+}
+
+templ headerActions(lang LanguageToggleData) {
+	<div class="ui-header-language">
+		@languageToggle(lang)
+	</div>
+}
+
+templ languageToggle(data LanguageToggleData) {
+	<button
+		type="button"
+		id="web-language-toggle"
+		class="web-language-toggle ui-header-action-btn"
+		data-default-locale={ data.DefaultLocale }
+		data-current-locale={ data.CurrentLocale }
+		data-next-locale={ data.NextLocale }
+		data-available-locales={ strings.Join(data.AvailableLocales, ",") }
+	>{ data.CurrentLabel }</button>
+}

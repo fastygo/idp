@@ -8,3 +8,5 @@ env.*
 keys/
 node_modules/
 package-lock.json
+pkg/authkit/static/css/app.css
+pkg/authkit/static/js/ui8kit.js

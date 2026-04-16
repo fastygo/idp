@@ -41,7 +41,7 @@ func main() {
 		root = filepath.Join("..", "..")
 	}
 
-	target := filepath.Join(root, "internal", "web", "static", "js", "ui8kit.js")
+	target := filepath.Join(root, "pkg", "authkit", "static", "js", "ui8kit.js")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		panic(fmt.Errorf("mkdir target dir: %w", err))
 	}

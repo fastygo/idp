@@ -1,151 +1,145 @@
 package server
 
 import (
-	"html/template"
-	"log"
 	"net/http"
-	"path/filepath"
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
-	"idp-cyberos/internal/protocol/oidc"
+	protocoloidc "idp-cyberos/internal/protocol/oidc"
 	"idp-cyberos/internal/protocol/saml"
-	"idp-cyberos/internal/web/views"
-	"idp-cyberos/pkg/provider"
-	hankoprovider "idp-cyberos/pkg/provider/hanko"
+	"idp-cyberos/pkg/authkit"
+	"idp-cyberos/pkg/core"
 )
 
 type IdPServer struct {
-	cfg        *config.Config
-	kp         *auth.IdPKeyPair
-	verifier   provider.CredentialVerifier
-	oidc       *oidc.Handlers
-	postTpl    *template.Template
-	flowConfig provider.FlowConfig
+	cfg         *config.Config
+	kp          *auth.IdPKeyPair
+	creds       core.CredentialVerifier
+	codeStore   core.AuthCodeStore
+	renderer    authkit.Renderer
+	oidc        *protocoloidc.Handlers
 }
 
-func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, verifier provider.CredentialVerifier, codeStore provider.AuthCodeStore) *IdPServer {
-	tplDir := "templates"
-	postTpl := template.Must(template.ParseFiles(filepath.Join(tplDir, "postform.html")))
-
+func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, creds core.CredentialVerifier, codeStore core.AuthCodeStore, renderer authkit.Renderer) *IdPServer {
 	return &IdPServer{
-		cfg:        cfg,
-		kp:         kp,
-		verifier:   verifier,
-		oidc:       oidc.NewHandlers(cfg, kp, codeStore),
-		postTpl:    postTpl,
-		flowConfig: verifier.FlowConfig(),
+		cfg:       cfg,
+		kp:        kp,
+		creds:     creds,
+		codeStore: codeStore,
+		renderer:  renderer,
+		oidc:      protocoloidc.NewHandlers(cfg, kp, codeStore),
 	}
 }
 
-func (s *IdPServer) OIDCHandlers() *oidc.Handlers {
+func (s *IdPServer) OIDCHandlers() *protocoloidc.Handlers {
 	return s.oidc
 }
 
 func (s *IdPServer) ShowLogin(w http.ResponseWriter, r *http.Request) {
-	views.RenderLogin(w, r, s.cfg)
+	s.renderer.RenderLogin(w, r)
 }
 
 func (s *IdPServer) HandleSSO(w http.ResponseWriter, r *http.Request) {
 	req, err := saml.ParseAuthnRequest(r, s.cfg)
 	if err != nil {
-		log.Printf("SSO error: %v", err)
-		http.Error(w, "Bad SAML request", http.StatusBadRequest)
+		s.renderer.RenderError(w, r, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sess := auth.GetSession(r, s.cfg.SessionKey)
-	if sess != nil {
-		s.issueResponse(w, req, sess.Email)
+	if sess := auth.GetSession(r, s.cfg.SessionKey); sess != nil {
+		s.completeSAML(w, r, req, sess.Email)
 		return
 	}
 
-	auth.SavePendingRequest(w, req.ID, req.SP.EntityID, req.SP.ACSUrl, req.RelayState, s.cfg.SessionKey)
-	views.RenderLogin(w, r, s.cfg)
+	auth.SavePendingRequest(
+		w,
+		req.ID,
+		req.SP.EntityID,
+		req.SP.ACSUrl,
+		req.RelayState,
+		s.cfg.SessionKey,
+	)
+	s.renderer.RenderLogin(w, r)
 }
 
 func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
-	tokenStr := hankoprovider.ExtractToken(r, s.flowConfig.CookieName)
-	if tokenStr == "" {
-		http.Error(w, "Missing authentication", http.StatusUnauthorized)
+	flow := s.creds.FlowConfig()
+	token := extractToken(r, flow.CookieName)
+	if token == "" {
+		s.renderer.RenderError(w, r, "Authentication token not found", http.StatusUnauthorized)
 		return
 	}
 
-	claims, err := s.verifier.VerifyToken(tokenStr)
+	claims, err := s.creds.VerifyToken(token)
 	if err != nil {
-		log.Printf("JWT verification failed: %v", err)
-		http.Error(w, "Authentication failed", http.StatusUnauthorized)
+		s.renderer.RenderError(w, r, "Authentication failed: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	email := claims.Email
-	if email == "" {
-		http.Error(w, "No email in token", http.StatusBadRequest)
-		return
-	}
+	auth.CreateSession(w, claims.Email, s.cfg.SessionKey)
 
-	auth.CreateSession(w, email, s.cfg.SessionKey)
-
-	oidcPending := auth.GetOIDCPendingRequest(r, s.cfg.SessionKey)
-	if oidcPending != nil {
-		auth.ClearOIDCPendingRequest(w)
-		client := s.cfg.FindOIDCClient(oidcPending.ClientID)
-		if client == nil {
-			http.Error(w, "Unknown OIDC client", http.StatusBadRequest)
+	if pending := auth.GetPendingRequest(r, s.cfg.SessionKey); pending != nil {
+		sp := s.cfg.FindSP(pending.SPEntityID)
+		if sp == nil {
+			s.renderer.RenderError(w, r, "Unknown service provider", http.StatusBadRequest)
 			return
 		}
-		s.oidc.IssueCode(w, r, client, oidcPending.RedirectURI, oidcPending.State, oidcPending.Nonce, oidcPending.Scope, email)
+
+		auth.ClearPendingRequest(w)
+		s.completeSAML(w, r, &saml.ParsedRequest{
+			AuthnRequest: saml.AuthnRequest{ID: pending.RequestID, ACSUrl: pending.ACSUrl},
+			SP:           sp,
+			RelayState:   pending.RelayState,
+		}, claims.Email)
 		return
 	}
 
-	pending := auth.GetPendingRequest(r, s.cfg.SessionKey)
-	if pending == nil {
-		http.Error(w, "No pending authentication request", http.StatusBadRequest)
+	if pending := auth.GetOIDCPendingRequest(r, s.cfg.SessionKey); pending != nil {
+		client := s.cfg.FindOIDCClient(pending.ClientID)
+		if client == nil {
+			s.renderer.RenderError(w, r, "Unknown OIDC client", http.StatusBadRequest)
+			return
+		}
+
+		auth.ClearOIDCPendingRequest(w)
+		s.oidc.IssueCode(w, r, client, pending.RedirectURI, pending.State, pending.Nonce, pending.Scope, claims.Email)
 		return
 	}
 
-	sp := s.cfg.FindSP(pending.SPEntityID)
-	if sp == nil {
-		http.Error(w, "Unknown service provider", http.StatusBadRequest)
-		return
-	}
-
-	parsedReq := &saml.ParsedRequest{
-		AuthnRequest: saml.AuthnRequest{},
-		SP:           sp,
-		RelayState:   pending.RelayState,
-	}
-	parsedReq.AuthnRequest.ID = pending.RequestID
-
-	auth.ClearPendingRequest(w)
-	s.issueResponse(w, parsedReq, email)
+	http.Redirect(w, r, s.cfg.BaseURL, http.StatusFound)
 }
 
 func (s *IdPServer) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearSession(w)
+	auth.ClearPendingRequest(w)
+	auth.ClearOIDCPendingRequest(w)
+
 	returnTo := r.URL.Query().Get("return_to")
 	if !s.cfg.IsAllowedLogoutReturnURL(returnTo) {
 		returnTo = s.cfg.DefaultLogoutReturnURL()
 	}
 
-	auth.ClearSession(w)
-	auth.ClearPendingRequest(w)
-	auth.ClearOIDCPendingRequest(w)
-
-	views.RenderLogout(w, r, s.cfg, returnTo)
+	s.renderer.RenderLogout(w, r, returnTo)
 }
 
-func (s *IdPServer) issueResponse(w http.ResponseWriter, req *saml.ParsedRequest, email string) {
-	samlResp, err := saml.BuildSAMLResponse(req, email, s.cfg, s.kp)
+func (s *IdPServer) completeSAML(w http.ResponseWriter, r *http.Request, req *saml.ParsedRequest, email string) {
+	samlResponse, err := saml.BuildSAMLResponse(req, email, s.cfg, s.kp)
 	if err != nil {
-		log.Printf("SAML Response build error: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+		s.renderer.RenderError(w, r, "Failed to build SAML response: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	_ = s.postTpl.Execute(w, map[string]string{
-		"ACSUrl":       req.SP.ACSUrl,
-		"SAMLResponse": samlResp,
-		"RelayState":   req.RelayState,
-	})
+	if err := saml.RenderPostForm(w, req.SP.ACSUrl, samlResponse, req.RelayState); err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+	}
+}
+
+func extractToken(r *http.Request, cookieName string) string {
+	if authHeader := r.Header.Get("Authorization"); len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		return authHeader[7:]
+	}
+	if cookie, err := r.Cookie(cookieName); err == nil {
+		return cookie.Value
+	}
+	return r.URL.Query().Get("token")
 }

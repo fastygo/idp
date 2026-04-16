@@ -10,8 +10,10 @@ import (
 	"idp-cyberos/internal/config"
 	"idp-cyberos/internal/protocol/saml"
 	"idp-cyberos/internal/server"
-	"idp-cyberos/pkg/provider/hanko"
-	"idp-cyberos/pkg/provider/memory"
+	"idp-cyberos/pkg/authkit"
+	hanko "idp-cyberos/pkg/authkit-hanko"
+	"idp-cyberos/pkg/core"
+	"idp-cyberos/pkg/store/memory"
 )
 
 func main() {
@@ -36,12 +38,23 @@ func main() {
 
 	creds := hanko.NewVerifier(cfg.HankoAPIURL)
 	codeStore := memory.NewCodeStore()
-	srv := server.NewIdPServer(cfg, kp, creds, codeStore)
+	ui := authkit.New(authkit.ViewConfig{
+		BrandName: "CyberOS SSO",
+		BaseURL:   cfg.BaseURL,
+		Flow:      creds.FlowConfig(),
+		Features: core.FeatureFlags{
+			AllowPublicRegistration: cfg.Features.AllowPublicRegistration,
+			AllowOIDCRegistration:   cfg.Features.AllowOIDCRegistration,
+			AllowSAMLRegistration:   cfg.Features.AllowSAMLRegistration,
+		},
+		Locales: []string{"en", "ru"},
+	})
+	srv := server.NewIdPServer(cfg, kp, creds, codeStore, ui)
 	oidcH := srv.OIDCHandlers()
 
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(authkit.MergedFS(ui.StaticFS(), creds.StaticFS()))))
 
 	// Root redirect
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {

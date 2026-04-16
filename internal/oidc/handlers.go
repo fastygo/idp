@@ -14,17 +14,17 @@ import (
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
-	"idp-cyberos/pkg/provider"
-	"idp-cyberos/pkg/provider/memory"
+	"idp-cyberos/pkg/core"
+	"idp-cyberos/pkg/store/memory"
 )
 
 type Handlers struct {
 	cfg       *config.Config
 	kp        *auth.IdPKeyPair
-	codeStore provider.AuthCodeStore
+	codeStore core.AuthCodeStore
 }
 
-func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore provider.AuthCodeStore) *Handlers {
+func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore core.AuthCodeStore) *Handlers {
 	return &Handlers{
 		cfg:       cfg,
 		kp:        kp,
@@ -100,7 +100,7 @@ func (h *Handlers) HandleAuthorize(showLogin ShowLoginFunc) http.HandlerFunc {
 
 func (h *Handlers) IssueCode(w http.ResponseWriter, r *http.Request, client *config.OIDCClient, redirectURI, state, nonce, scope, email string) {
 	code := memory.GenerateCode()
-	_ = h.codeStore.Save(&provider.AuthCode{
+	_ = h.codeStore.Save(&core.AuthCode{
 		Code:        code,
 		ClientID:    client.ClientID,
 		RedirectURI: redirectURI,
