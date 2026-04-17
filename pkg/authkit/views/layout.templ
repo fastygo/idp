@@ -1,6 +1,7 @@
 package views
 
 import (
+	"net/url"
 	"strings"
 
 	templ2 "github.com/a-h/templ"
@@ -27,13 +28,67 @@ templ Layout(data LayoutData, headExtra templ2.Component, body templ2.Component)
 }
 
 templ layoutHeadExtra(data LayoutData, headExtra templ2.Component) {
+	@flowResourceHints(data)
 	if data.Flow.SDKScript != "" {
-		<script src={ data.Flow.SDKScript } defer></script>
+		if data.Flow.SDKScriptIntegrity != "" {
+			<script
+				src={ data.Flow.SDKScript }
+				integrity={ data.Flow.SDKScriptIntegrity }
+				crossorigin="anonymous"
+				defer
+			></script>
+		} else {
+			<script src={ data.Flow.SDKScript } defer></script>
+		}
 	}
 	@authConfigBlock(data)
 	if headExtra != nil {
 		@headExtra
 	}
+}
+
+// flowResourceHints emits early-network hints so that:
+//   - DNS+TCP+TLS to the auth API (Hanko) is warmed up in parallel with HTML
+//     parsing, removing one full round-trip from cold-start.
+//   - the AuthKit JS bundle starts downloading earlier than the default
+//     `<script defer>` placement allows.
+//
+// All hints are emitted only when the corresponding Flow values are present,
+// so embedders that disable the SDK script or run on the same origin pay no
+// cost.
+templ flowResourceHints(data LayoutData) {
+	if origin := flowAPIOrigin(data.Flow.APIEndpoint); origin != "" {
+		<link rel="preconnect" href={ origin } crossorigin="anonymous"/>
+		<link rel="dns-prefetch" href={ origin }/>
+	}
+	if data.Flow.SDKScript != "" {
+		if data.Flow.SDKScriptIntegrity != "" {
+			<link
+				rel="preload"
+				href={ data.Flow.SDKScript }
+				as="script"
+				integrity={ data.Flow.SDKScriptIntegrity }
+				crossorigin="anonymous"
+			/>
+		} else {
+			<link rel="preload" href={ data.Flow.SDKScript } as="script" crossorigin="anonymous"/>
+		}
+	}
+}
+
+// flowAPIOrigin extracts a normalised origin (scheme://host[:port]) from the
+// configured AuthKit API endpoint. Returns "" if the endpoint is empty or
+// relative — in that case there is nothing useful to preconnect to.
+func flowAPIOrigin(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 templ authConfigBlock(data LayoutData) {

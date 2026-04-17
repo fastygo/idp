@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
@@ -40,10 +41,30 @@ func main() {
 	codeStore := memory.NewCodeStore()
 	sessionStore := memory.NewSessionStore()
 	revoker := memory.NewTokenRevoker()
+
+	mergedStaticFS := authkit.MergedFS(authkit.UIStaticFS(), creds.StaticFS())
+	manifest, err := authkit.BuildManifest(mergedStaticFS)
+	if err != nil {
+		log.Fatalf("Failed to build static asset manifest: %v", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		log.Fatalf("Static asset manifest invalid: %v", err)
+	}
+
+	flow := creds.FlowConfig()
+	if e, ok := manifest.LookupLogical(strings.TrimPrefix(flow.SDKScript, "/")); ok {
+		flow.SDKScript = "/" + e.FingerprintedPath
+		flow.SDKScriptIntegrity = e.IntegritySHA384
+		log.Printf("AuthKit bundle: %s (sri=%s, %d bytes plain, %d bytes gzip)",
+			flow.SDKScript, flow.SDKScriptIntegrity, len(e.Body()), len(e.Gzipped()))
+	} else {
+		log.Printf("WARNING: AuthKit bundle %q not found in static manifest; cache and SRI disabled", flow.SDKScript)
+	}
+
 	ui := authkit.New(authkit.ViewConfig{
 		BrandName: "CyberOS SSO",
 		BaseURL:   cfg.BaseURL,
-		Flow:      creds.FlowConfig(),
+		Flow:      flow,
 		Features: core.FeatureFlags{
 			AllowPublicRegistration: cfg.Features.AllowPublicRegistration,
 			AllowOIDCRegistration:   cfg.Features.AllowOIDCRegistration,
@@ -56,7 +77,9 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(authkit.MergedFS(ui.StaticFS(), creds.StaticFS()))))
+	staticHandler := authkit.FingerprintedHandler(manifest, http.FileServerFS(mergedStaticFS))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler))
+	mux.Handle("HEAD /static/", http.StripPrefix("/static/", staticHandler))
 
 	// Root redirect
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
