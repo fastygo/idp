@@ -4,8 +4,6 @@ listen_addr: ":5800"
 hanko_api_url: "https://api.cybeross.ru"
 key_path: "keys/idp.key"
 cert_path: "keys/idp.crt"
-# Prefer setting IDP_SESSION_KEY in .env (see .env.example); overrides this value at runtime.
-session_key: "CHANGE-ME-TO-A-RANDOM-32-BYTE-KEY"
 
 service_providers:
   - entity_id: "https://cybeross.ru"
