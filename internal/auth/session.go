@@ -2,8 +2,10 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +22,8 @@ const (
 
 type IdPSession struct {
 	Email     string `json:"email"`
+	Sub       string `json:"sub,omitempty"`
+	SID       string `json:"sid,omitempty"`
 	ExpiresAt int64  `json:"exp"`
 }
 
@@ -32,18 +36,25 @@ type PendingAuthnRequest struct {
 }
 
 type PendingOIDCRequest struct {
-	ClientID    string `json:"cid"`
-	RedirectURI string `json:"ru"`
-	State       string `json:"st"`
-	Nonce       string `json:"n"`
-	Scope       string `json:"sc"`
-	ExpiresAt   int64  `json:"exp"`
+	ClientID            string `json:"cid"`
+	RedirectURI         string `json:"ru"`
+	State               string `json:"st"`
+	Nonce               string `json:"n"`
+	Scope               string `json:"sc"`
+	CodeChallenge       string `json:"cc,omitempty"`
+	CodeChallengeMethod string `json:"ccm,omitempty"`
+	ExpiresAt           int64  `json:"exp"`
 }
 
-func CreateSession(w http.ResponseWriter, email, sessionKey string) {
+func CreateSession(w http.ResponseWriter, email, sub, sid, sessionKey string) {
 	sess := IdPSession{
 		Email:     email,
+		Sub:       sub,
+		SID:       sid,
 		ExpiresAt: time.Now().Add(SessionDuration).Unix(),
+	}
+	if sess.Sub == "" {
+		sess.Sub = email
 	}
 	val := SignedEncode(sess, sessionKey)
 	http.SetCookie(w, &http.Cookie{
@@ -80,6 +91,9 @@ func GetSession(r *http.Request, sessionKey string) *IdPSession {
 	}
 	if time.Now().Unix() > sess.ExpiresAt {
 		return nil
+	}
+	if sess.Sub == "" {
+		sess.Sub = sess.Email
 	}
 	return &sess
 }
@@ -199,4 +213,10 @@ func computeHMAC(data, key string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write([]byte(data))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func GenerateSessionID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

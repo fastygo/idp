@@ -9,7 +9,7 @@ func TestSessionRoundtrip(t *testing.T) {
 	key := "test-session-key-1234567890abcde"
 
 	rr := httptest.NewRecorder()
-	CreateSession(rr, "user@test.local", key)
+	CreateSession(rr, "user@test.local", "user@test.local", "sid-123", key)
 
 	cookies := rr.Result().Cookies()
 	if len(cookies) == 0 {
@@ -27,6 +27,12 @@ func TestSessionRoundtrip(t *testing.T) {
 	}
 	if sess.Email != "user@test.local" {
 		t.Fatalf("email = %q", sess.Email)
+	}
+	if sess.Sub != "user@test.local" {
+		t.Fatalf("sub = %q", sess.Sub)
+	}
+	if sess.SID != "sid-123" {
+		t.Fatalf("sid = %q", sess.SID)
 	}
 
 	sess2 := GetSession(req, "wrong-key")

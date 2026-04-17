@@ -22,9 +22,10 @@ func NewVerifier(apiURL string) *Verifier {
 
 func (v *Verifier) FlowConfig() core.FlowConfig {
 	return core.FlowConfig{
-		APIEndpoint: v.apiURL,
-		CookieName:  defaultCookieName,
-		LogoutPath:  "/logout",
-		SDKScript:   "/static/js/authkit-hanko.js",
+		APIEndpoint:        v.apiURL,
+		CookieName:         defaultCookieName,
+		LogoutPath:         "/logout",
+		SDKScript:          "/static/js/authkit-hanko.js",
+		EndSessionEndpoint: "/end_session",
 	}
 }

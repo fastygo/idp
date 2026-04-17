@@ -1,10 +1,13 @@
 package oidc
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +28,7 @@ func generateTestKeyPair(t *testing.T) *auth.IdPKeyPair {
 	return kp
 }
 
-func newTestOIDCHandlers(t *testing.T) (*Handlers, *config.Config) {
+func newTestOIDCHandlers(t *testing.T) (*Handlers, *config.Config, *memory.CodeStore, *memory.SessionStore) {
 	t.Helper()
 	kp := generateTestKeyPair(t)
 	cfg := &config.Config{
@@ -45,12 +48,14 @@ func newTestOIDCHandlers(t *testing.T) (*Handlers, *config.Config) {
 
 	cfg.BuildIndexes()
 	codeStore := memory.NewCodeStore()
-	h := NewHandlers(cfg, kp, codeStore)
-	return h, cfg
+	sessionStore := memory.NewSessionStore()
+	revoker := memory.NewTokenRevoker()
+	h := NewHandlers(cfg, kp, codeStore, sessionStore, revoker)
+	return h, cfg, codeStore, sessionStore
 }
 
 func TestOIDCDiscovery(t *testing.T) {
-	h, _ := newTestOIDCHandlers(t)
+	h, _, _, _ := newTestOIDCHandlers(t)
 	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
 	rr := httptest.NewRecorder()
 	h.HandleDiscovery(rr, req)
@@ -76,10 +81,18 @@ func TestOIDCDiscovery(t *testing.T) {
 	if doc["jwks_uri"] != "https://idp.test.local/jwks" {
 		t.Fatalf("jwks_uri = %v", doc["jwks_uri"])
 	}
+	methods, ok := doc["code_challenge_methods_supported"].([]any)
+	if !ok || len(methods) != 2 {
+		t.Fatalf("code_challenge_methods_supported = %#v", doc["code_challenge_methods_supported"])
+	}
+	gotMethods := []string{methods[0].(string), methods[1].(string)}
+	if !slices.Equal(gotMethods, []string{"S256", "plain"}) {
+		t.Fatalf("code_challenge_methods_supported = %#v", gotMethods)
+	}
 }
 
 func TestOIDCJWKS(t *testing.T) {
-	h, _ := newTestOIDCHandlers(t)
+	h, _, _, _ := newTestOIDCHandlers(t)
 	req := httptest.NewRequest("GET", "/jwks", nil)
 	rr := httptest.NewRecorder()
 	h.HandleJWKS(rr, req)
@@ -112,7 +125,7 @@ func TestOIDCJWKS(t *testing.T) {
 }
 
 func TestOIDCTokenExchange(t *testing.T) {
-	h, cfg := newTestOIDCHandlers(t)
+	h, cfg, _, _ := newTestOIDCHandlers(t)
 
 	code := memory.GenerateCode()
 	_ = h.codeStore.Save(&core.AuthCode{
@@ -160,7 +173,7 @@ func TestOIDCTokenExchange(t *testing.T) {
 }
 
 func TestOIDCTokenReplay(t *testing.T) {
-	h, _ := newTestOIDCHandlers(t)
+	h, _, _, _ := newTestOIDCHandlers(t)
 
 	code := memory.GenerateCode()
 	_ = h.codeStore.Save(&core.AuthCode{
@@ -198,7 +211,7 @@ func TestOIDCTokenReplay(t *testing.T) {
 }
 
 func TestOIDCTokenWrongSecret(t *testing.T) {
-	h, _ := newTestOIDCHandlers(t)
+	h, _, _, _ := newTestOIDCHandlers(t)
 
 	code := memory.GenerateCode()
 	_ = h.codeStore.Save(&core.AuthCode{
@@ -226,4 +239,170 @@ func TestOIDCTokenWrongSecret(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
 	}
+}
+
+func TestOIDCAuthorizeWithPKCE(t *testing.T) {
+	h, cfg, codeStore, _ := newTestOIDCHandlers(t)
+
+	loginRR := httptest.NewRecorder()
+	auth.CreateSession(loginRR, "user@test.local", "user@test.local", "sid-existing", cfg.SessionKey)
+
+	req := httptest.NewRequest("GET", "/authorize?client_id=testclient&redirect_uri=https%3A%2F%2Fapp.test.local%2Fcallback&response_type=code&scope=openid+email&state=state-1&nonce=nonce-1&code_challenge=pkce-s256-value&code_challenge_method=S256", nil)
+	for _, cookie := range loginRR.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+
+	rr := httptest.NewRecorder()
+	h.HandleAuthorize(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("showLogin should not be called when session exists")
+	})(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", rr.Code)
+	}
+
+	location := rr.Header().Get("Location")
+	if location == "" {
+		t.Fatal("missing redirect location")
+	}
+
+	u, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse redirect: %v", err)
+	}
+	code := u.Query().Get("code")
+	if code == "" {
+		t.Fatal("missing code in redirect")
+	}
+
+	ac, err := codeStore.Consume(code)
+	if err != nil {
+		t.Fatalf("consume code: %v", err)
+	}
+	if ac == nil {
+		t.Fatal("expected stored auth code")
+	}
+	if ac.CodeChallenge != "pkce-s256-value" {
+		t.Fatalf("code challenge = %q", ac.CodeChallenge)
+	}
+	if ac.CodeChallengeMethod != "S256" {
+		t.Fatalf("code challenge method = %q", ac.CodeChallengeMethod)
+	}
+	if ac.SID != "sid-existing" {
+		t.Fatalf("sid = %q", ac.SID)
+	}
+}
+
+func TestOIDCTokenWithS256Verifier(t *testing.T) {
+	h, _, _, _ := newTestOIDCHandlers(t)
+
+	verifier := "correct-verifier-value"
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&core.AuthCode{
+		Code:                code,
+		ClientID:            "testclient",
+		RedirectURI:         "https://app.test.local/callback",
+		Email:               "user@test.local",
+		Sub:                 "user@test.local",
+		Nonce:               "abc",
+		CodeChallenge:       verifyPKCEChallengeForTest(verifier),
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(5 * time.Minute),
+	})
+
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {"https://app.test.local/callback"},
+		"client_id":     {"testclient"},
+		"client_secret": {"testsecret"},
+		"code_verifier": {verifier},
+	}
+
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestOIDCTokenWithBadVerifier(t *testing.T) {
+	h, _, _, _ := newTestOIDCHandlers(t)
+
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&core.AuthCode{
+		Code:                code,
+		ClientID:            "testclient",
+		RedirectURI:         "https://app.test.local/callback",
+		Email:               "user@test.local",
+		Sub:                 "user@test.local",
+		CodeChallenge:       verifyPKCEChallengeForTest("good-verifier"),
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(5 * time.Minute),
+	})
+
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {"https://app.test.local/callback"},
+		"client_id":     {"testclient"},
+		"client_secret": {"testsecret"},
+		"code_verifier": {"wrong-verifier"},
+	}
+
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "code_verifier mismatch") {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func TestOIDCTokenMissingVerifier(t *testing.T) {
+	h, _, _, _ := newTestOIDCHandlers(t)
+
+	code := memory.GenerateCode()
+	_ = h.codeStore.Save(&core.AuthCode{
+		Code:                code,
+		ClientID:            "testclient",
+		RedirectURI:         "https://app.test.local/callback",
+		Email:               "user@test.local",
+		Sub:                 "user@test.local",
+		CodeChallenge:       verifyPKCEChallengeForTest("good-verifier"),
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(5 * time.Minute),
+	})
+
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {"https://app.test.local/callback"},
+		"client_id":     {"testclient"},
+		"client_secret": {"testsecret"},
+	}
+
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "code_verifier required") {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func verifyPKCEChallengeForTest(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
 }

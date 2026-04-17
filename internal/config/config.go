@@ -16,10 +16,14 @@ type ServiceProvider struct {
 }
 
 type OIDCClient struct {
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
-	RedirectURIs []string `yaml:"redirect_uris"`
-	Name         string   `yaml:"name"`
+	ClientID                  string   `yaml:"client_id"`
+	ClientSecret              string   `yaml:"client_secret"`
+	RedirectURIs              []string `yaml:"redirect_uris"`
+	PostLogoutRedirectURIs    []string `yaml:"post_logout_redirect_uris"`
+	BackChannelLogoutURI      string   `yaml:"back_channel_logout_uri"`
+	FrontChannelLogoutURI     string   `yaml:"front_channel_logout_uri"`
+	FrontChannelLogoutSession bool     `yaml:"front_channel_logout_session_required"`
+	Name                      string   `yaml:"name"`
 }
 
 type Features struct {
@@ -177,6 +181,15 @@ func (c *Config) IsAllowedLogoutReturnURL(raw string) bool {
 
 func (oc *OIDCClient) ValidRedirectURI(uri string) bool {
 	for _, allowed := range oc.RedirectURIs {
+		if allowed == uri {
+			return true
+		}
+	}
+	return false
+}
+
+func (oc *OIDCClient) ValidPostLogoutRedirectURI(uri string) bool {
+	for _, allowed := range oc.PostLogoutRedirectURIs {
 		if allowed == uri {
 			return true
 		}

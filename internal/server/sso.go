@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"idp-cyberos/internal/auth"
 	"idp-cyberos/internal/config"
@@ -12,22 +13,24 @@ import (
 )
 
 type IdPServer struct {
-	cfg         *config.Config
-	kp          *auth.IdPKeyPair
-	creds       core.CredentialVerifier
-	codeStore   core.AuthCodeStore
-	renderer    authkit.Renderer
-	oidc        *protocoloidc.Handlers
+	cfg          *config.Config
+	kp           *auth.IdPKeyPair
+	creds        core.CredentialVerifier
+	codeStore    core.AuthCodeStore
+	sessionStore core.SessionStore
+	renderer     authkit.Renderer
+	oidc         *protocoloidc.Handlers
 }
 
-func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, creds core.CredentialVerifier, codeStore core.AuthCodeStore, renderer authkit.Renderer) *IdPServer {
+func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, creds core.CredentialVerifier, codeStore core.AuthCodeStore, sessionStore core.SessionStore, revoker core.TokenRevoker, renderer authkit.Renderer) *IdPServer {
 	return &IdPServer{
-		cfg:       cfg,
-		kp:        kp,
-		creds:     creds,
-		codeStore: codeStore,
-		renderer:  renderer,
-		oidc:      protocoloidc.NewHandlers(cfg, kp, codeStore),
+		cfg:          cfg,
+		kp:           kp,
+		creds:        creds,
+		codeStore:    codeStore,
+		sessionStore: sessionStore,
+		renderer:     renderer,
+		oidc:         protocoloidc.NewHandlers(cfg, kp, codeStore, sessionStore, revoker),
 	}
 }
 
@@ -76,7 +79,24 @@ func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth.CreateSession(w, claims.Email, s.cfg.SessionKey)
+	sub := claims.Sub
+	if sub == "" {
+		sub = claims.Email
+	}
+	sid := auth.GenerateSessionID()
+	if s.sessionStore != nil {
+		if err := s.sessionStore.Register(&core.SessionRecord{
+			SID:       sid,
+			Sub:       sub,
+			Email:     claims.Email,
+			IssuedAt:  time.Now(),
+			ExpiresAt: time.Now().Add(auth.SessionDuration),
+		}); err != nil {
+			s.renderer.RenderError(w, r, "Failed to register session", http.StatusInternalServerError)
+			return
+		}
+	}
+	auth.CreateSession(w, claims.Email, sub, sid, s.cfg.SessionKey)
 
 	if pending := auth.GetPendingRequest(r, s.cfg.SessionKey); pending != nil {
 		sp := s.cfg.FindSP(pending.SPEntityID)
@@ -102,7 +122,7 @@ func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		auth.ClearOIDCPendingRequest(w)
-		s.oidc.IssueCode(w, r, client, pending.RedirectURI, pending.State, pending.Nonce, pending.Scope, claims.Email)
+		s.oidc.IssueCode(w, r, client, pending.RedirectURI, pending.State, pending.Nonce, pending.Scope, claims.Email, sub, sid, pending.CodeChallenge, pending.CodeChallengeMethod)
 		return
 	}
 
@@ -110,9 +130,10 @@ func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *IdPServer) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	auth.ClearSession(w)
-	auth.ClearPendingRequest(w)
-	auth.ClearOIDCPendingRequest(w)
+	if err := s.oidc.HandleBrowserLogout(w, r); err != nil {
+		s.renderer.RenderError(w, r, "Logout failed", http.StatusInternalServerError)
+		return
+	}
 
 	returnTo := r.URL.Query().Get("return_to")
 	if !s.cfg.IsAllowedLogoutReturnURL(returnTo) {

@@ -38,6 +38,8 @@ func main() {
 
 	creds := hanko.NewVerifier(cfg.HankoAPIURL)
 	codeStore := memory.NewCodeStore()
+	sessionStore := memory.NewSessionStore()
+	revoker := memory.NewTokenRevoker()
 	ui := authkit.New(authkit.ViewConfig{
 		BrandName: "CyberOS SSO",
 		BaseURL:   cfg.BaseURL,
@@ -49,7 +51,7 @@ func main() {
 		},
 		Locales: []string{"en", "ru"},
 	})
-	srv := server.NewIdPServer(cfg, kp, creds, codeStore, ui)
+	srv := server.NewIdPServer(cfg, kp, creds, codeStore, sessionStore, revoker, ui)
 	oidcH := srv.OIDCHandlers()
 
 	mux := http.NewServeMux()
@@ -70,6 +72,10 @@ func main() {
 	// OIDC endpoints
 	mux.HandleFunc("GET /.well-known/openid-configuration", oidcH.HandleDiscovery)
 	mux.HandleFunc("GET /authorize", oidcH.HandleAuthorize(srv.ShowLogin))
+	mux.HandleFunc("GET /end_session", oidcH.HandleEndSession)
+	mux.HandleFunc("POST /end_session", oidcH.HandleEndSession)
+	mux.HandleFunc("POST /introspect", oidcH.HandleIntrospect)
+	mux.HandleFunc("POST /revoke", oidcH.HandleRevoke)
 	mux.HandleFunc("POST /token", oidcH.HandleToken)
 	mux.HandleFunc("GET /userinfo", oidcH.HandleUserinfo)
 	mux.HandleFunc("GET /jwks", oidcH.HandleJWKS)

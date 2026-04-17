@@ -1,10 +1,7 @@
 package oidc
 
 import (
-	"crypto"
 	"crypto/hmac"
-	"crypto/rsa"
-	"crypto/sha256"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -19,34 +16,48 @@ import (
 )
 
 type Handlers struct {
-	cfg       *config.Config
-	kp        *auth.IdPKeyPair
-	codeStore core.AuthCodeStore
+	cfg          *config.Config
+	kp           *auth.IdPKeyPair
+	codeStore    core.AuthCodeStore
+	sessionStore core.SessionStore
+	revoker      core.TokenRevoker
 }
 
-func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore core.AuthCodeStore) *Handlers {
+func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore core.AuthCodeStore, sessionStore core.SessionStore, revoker core.TokenRevoker) *Handlers {
 	return &Handlers{
-		cfg:       cfg,
-		kp:        kp,
-		codeStore: codeStore,
+		cfg:          cfg,
+		kp:           kp,
+		codeStore:    codeStore,
+		sessionStore: sessionStore,
+		revoker:      revoker,
 	}
 }
 
 func (h *Handlers) HandleDiscovery(w http.ResponseWriter, r *http.Request) {
 	base := strings.TrimRight(h.cfg.BaseURL, "/")
 	doc := map[string]any{
-		"issuer":                                base,
-		"authorization_endpoint":                base + "/authorize",
-		"token_endpoint":                        base + "/token",
-		"userinfo_endpoint":                     base + "/userinfo",
-		"jwks_uri":                              base + "/jwks",
-		"response_types_supported":              []string{"code"},
-		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"RS256"},
-		"scopes_supported":                      []string{"openid", "email"},
-		"grant_types_supported":                 []string{"authorization_code"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
-		"claims_supported":                      []string{"sub", "email", "iss", "aud", "exp", "iat"},
+		"issuer":                 base,
+		"authorization_endpoint": base + "/authorize",
+		"introspection_endpoint": base + "/introspect",
+		"introspection_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
+		"token_endpoint":                             base + "/token",
+		"revocation_endpoint":                        base + "/revoke",
+		"revocation_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic"},
+		"userinfo_endpoint":                          base + "/userinfo",
+		"jwks_uri":                                   base + "/jwks",
+		"end_session_endpoint":                       base + "/end_session",
+		"backchannel_logout_supported":               true,
+		"backchannel_logout_session_supported":       true,
+		"code_challenge_methods_supported":           []string{"S256", "plain"},
+		"frontchannel_logout_supported":              true,
+		"frontchannel_logout_session_supported":      true,
+		"response_types_supported":                   []string{"code"},
+		"subject_types_supported":                    []string{"public"},
+		"id_token_signing_alg_values_supported":      []string{"RS256"},
+		"scopes_supported":                           []string{"openid", "email"},
+		"grant_types_supported":                      []string{"authorization_code"},
+		"token_endpoint_auth_methods_supported":      []string{"client_secret_post", "client_secret_basic"},
+		"claims_supported":                           []string{"sub", "sid", "jti", "email", "iss", "aud", "exp", "iat"},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -63,6 +74,19 @@ func (h *Handlers) HandleAuthorize(showLogin ShowLoginFunc) http.HandlerFunc {
 		scope := r.URL.Query().Get("scope")
 		state := r.URL.Query().Get("state")
 		nonce := r.URL.Query().Get("nonce")
+		codeChallenge := r.URL.Query().Get("code_challenge")
+		codeChallengeMethod := r.URL.Query().Get("code_challenge_method")
+
+		if codeChallengeMethod == "" {
+			codeChallengeMethod = "plain"
+		}
+		if codeChallenge == "" {
+			codeChallengeMethod = ""
+		}
+		if codeChallenge != "" && codeChallengeMethod != "plain" && codeChallengeMethod != "S256" {
+			http.Error(w, "invalid code_challenge_method", http.StatusBadRequest)
+			return
+		}
 
 		if responseType != "code" {
 			http.Error(w, "unsupported_response_type", http.StatusBadRequest)
@@ -82,32 +106,38 @@ func (h *Handlers) HandleAuthorize(showLogin ShowLoginFunc) http.HandlerFunc {
 
 		sess := auth.GetSession(r, h.cfg.SessionKey)
 		if sess != nil {
-			h.IssueCode(w, r, client, redirectURI, state, nonce, scope, sess.Email)
+			h.IssueCode(w, r, client, redirectURI, state, nonce, scope, sess.Email, sess.Sub, sess.SID, codeChallenge, codeChallengeMethod)
 			return
 		}
 
 		auth.SaveOIDCPendingRequest(w, &auth.PendingOIDCRequest{
-			ClientID:    clientID,
-			RedirectURI: redirectURI,
-			State:       state,
-			Nonce:       nonce,
-			Scope:       scope,
+			ClientID:            clientID,
+			RedirectURI:         redirectURI,
+			State:               state,
+			Nonce:               nonce,
+			Scope:               scope,
+			CodeChallenge:       codeChallenge,
+			CodeChallengeMethod: codeChallengeMethod,
 		}, h.cfg.SessionKey)
 
 		showLogin(w, r)
 	}
 }
 
-func (h *Handlers) IssueCode(w http.ResponseWriter, r *http.Request, client *config.OIDCClient, redirectURI, state, nonce, scope, email string) {
+func (h *Handlers) IssueCode(w http.ResponseWriter, r *http.Request, client *config.OIDCClient, redirectURI, state, nonce, scope, email, sub, sid, codeChallenge, codeChallengeMethod string) {
 	code := memory.GenerateCode()
 	_ = h.codeStore.Save(&core.AuthCode{
-		Code:        code,
-		ClientID:    client.ClientID,
-		RedirectURI: redirectURI,
-		Email:       email,
-		Sub:         email,
-		Nonce:       nonce,
-		ExpiresAt:   time.Now().Add(5 * time.Minute),
+		Code:                code,
+		ClientID:            client.ClientID,
+		RedirectURI:         redirectURI,
+		Email:               email,
+		Sub:                 sub,
+		Nonce:               nonce,
+		Scope:               scope,
+		SID:                 sid,
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+		ExpiresAt:           time.Now().Add(5 * time.Minute),
 	})
 
 	u, _ := url.Parse(redirectURI)
@@ -172,18 +202,36 @@ func (h *Handlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idToken, err := GenerateIDToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Nonce, time.Hour)
+	if ac.CodeChallenge != "" {
+		verifier := r.FormValue("code_verifier")
+		if verifier == "" {
+			tokenError(w, "invalid_grant", "code_verifier required")
+			return
+		}
+		if !verifyPKCE(ac.CodeChallenge, ac.CodeChallengeMethod, verifier) {
+			tokenError(w, "invalid_grant", "code_verifier mismatch")
+			return
+		}
+	}
+
+	idToken, err := GenerateIDToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Nonce, ac.SID, time.Hour)
 	if err != nil {
 		log.Printf("OIDC id_token generation error: %v", err)
 		tokenError(w, "server_error", "token generation failed")
 		return
 	}
 
-	accessToken, err := GenerateAccessToken(h.kp, h.cfg.BaseURL, ac.Sub, ac.Email, time.Hour)
+	accessToken, err := GenerateAccessToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Scope, ac.SID, time.Hour)
 	if err != nil {
 		log.Printf("OIDC access_token generation error: %v", err)
 		tokenError(w, "server_error", "token generation failed")
 		return
+	}
+
+	if h.sessionStore != nil && ac.SID != "" {
+		if err := h.sessionStore.AddClient(ac.SID, clientID); err != nil {
+			log.Printf("OIDC session store add client error: %v", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -217,40 +265,6 @@ func (h *Handlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 		"sub":   claims.Sub,
 		"email": claims.Email,
 	})
-}
-
-func (h *Handlers) verifyAccessToken(tokenStr string) (*AccessTokenClaims, error) {
-	parts := strings.Split(tokenStr, ".")
-	if len(parts) != 3 {
-		return nil, http.ErrNoCookie
-	}
-
-	payloadJSON, err := Base64URLDecode(parts[1])
-	if err != nil {
-		return nil, err
-	}
-
-	var claims AccessTokenClaims
-	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
-		return nil, err
-	}
-
-	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
-		return nil, http.ErrNoCookie
-	}
-
-	sigBytes, err := Base64URLDecode(parts[2])
-	if err != nil {
-		return nil, err
-	}
-
-	signed := parts[0] + "." + parts[1]
-	hsh := sha256.Sum256([]byte(signed))
-	if err := rsa.VerifyPKCS1v15(&h.kp.PrivateKey.PublicKey, crypto.SHA256, hsh[:], sigBytes); err != nil {
-		return nil, err
-	}
-
-	return &claims, nil
 }
 
 func (h *Handlers) HandleJWKS(w http.ResponseWriter, r *http.Request) {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"idp-cyberos/internal/auth"
@@ -26,17 +27,33 @@ type idTokenClaims struct {
 	Aud   string `json:"aud"`
 	Exp   int64  `json:"exp"`
 	Iat   int64  `json:"iat"`
+	Jti   string `json:"jti,omitempty"`
+	Sid   string `json:"sid,omitempty"`
 	Email string `json:"email,omitempty"`
 	Nonce string `json:"nonce,omitempty"`
 }
 
 type AccessTokenClaims struct {
-	Iss   string `json:"iss"`
-	Sub   string `json:"sub"`
-	Exp   int64  `json:"exp"`
-	Iat   int64  `json:"iat"`
-	Email string `json:"email,omitempty"`
-	Scope string `json:"scope,omitempty"`
+	Iss      string `json:"iss"`
+	Sub      string `json:"sub"`
+	Aud      string `json:"aud,omitempty"`
+	Exp      int64  `json:"exp"`
+	Iat      int64  `json:"iat"`
+	Jti      string `json:"jti,omitempty"`
+	Sid      string `json:"sid,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+}
+
+type logoutTokenClaims struct {
+	Iss    string         `json:"iss"`
+	Sub    string         `json:"sub"`
+	Aud    string         `json:"aud"`
+	Iat    int64          `json:"iat"`
+	Jti    string         `json:"jti"`
+	Sid    string         `json:"sid,omitempty"`
+	Events map[string]any `json:"events"`
 }
 
 func ComputeKID(kp *auth.IdPKeyPair) string {
@@ -44,7 +61,7 @@ func ComputeKID(kp *auth.IdPKeyPair) string {
 	return base64.RawURLEncoding.EncodeToString(h[:8])
 }
 
-func GenerateIDToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce string, ttl time.Duration) (string, error) {
+func GenerateIDToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce, sid string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := idTokenClaims{
 		Iss:   issuer,
@@ -52,21 +69,42 @@ func GenerateIDToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce st
 		Aud:   audience,
 		Exp:   now.Add(ttl).Unix(),
 		Iat:   now.Unix(),
+		Jti:   randomJTI(),
+		Sid:   sid,
 		Email: email,
 		Nonce: nonce,
 	}
 	return signJWT(kp, claims)
 }
 
-func GenerateAccessToken(kp *auth.IdPKeyPair, issuer, sub, email string, ttl time.Duration) (string, error) {
+func GenerateAccessToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, scope, sid string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := AccessTokenClaims{
-		Iss:   issuer,
-		Sub:   sub,
-		Exp:   now.Add(ttl).Unix(),
-		Iat:   now.Unix(),
-		Email: email,
-		Scope: "openid email",
+		Iss:      issuer,
+		Sub:      sub,
+		Aud:      audience,
+		Exp:      now.Add(ttl).Unix(),
+		Iat:      now.Unix(),
+		Jti:      randomJTI(),
+		Sid:      sid,
+		Email:    email,
+		Scope:    scope,
+		ClientID: audience,
+	}
+	return signJWT(kp, claims)
+}
+
+func GenerateLogoutToken(kp *auth.IdPKeyPair, issuer, audience, sub, sid string) (string, error) {
+	claims := logoutTokenClaims{
+		Iss: issuer,
+		Sub: sub,
+		Aud: audience,
+		Iat: time.Now().Unix(),
+		Jti: randomJTI(),
+		Sid: sid,
+		Events: map[string]any{
+			"http://schemas.openid.net/event/backchannel-logout": map[string]any{},
+		},
 	}
 	return signJWT(kp, claims)
 }
@@ -116,4 +154,35 @@ func Base64URLDecode(s string) ([]byte, error) {
 		s += "="
 	}
 	return base64.URLEncoding.DecodeString(s)
+}
+
+func randomJTI() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func VerifySignedClaims(token string, publicKey *rsa.PublicKey, dst any) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid token format")
+	}
+
+	payloadJSON, err := Base64URLDecode(parts[1])
+	if err != nil {
+		return err
+	}
+
+	sigBytes, err := Base64URLDecode(parts[2])
+	if err != nil {
+		return err
+	}
+
+	signed := parts[0] + "." + parts[1]
+	hash := sha256.Sum256([]byte(signed))
+	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hash[:], sigBytes); err != nil {
+		return err
+	}
+
+	return json.Unmarshal(payloadJSON, dst)
 }
