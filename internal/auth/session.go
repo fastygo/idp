@@ -98,7 +98,12 @@ func GetSession(r *http.Request, sessionKey string) *IdPSession {
 	return &sess
 }
 
+// SavePendingRequest persists a SAML AuthnRequest into a signed cookie until the
+// user finishes authentication. Saving a SAML pending request also clears any
+// OIDC pending request so a stale cross-protocol pending cookie cannot hijack a
+// later /sso/complete redirect.
 func SavePendingRequest(w http.ResponseWriter, requestID, spEntityID, acsURL, relayState, sessionKey string) {
+	ClearOIDCPendingRequest(w)
 	pending := PendingAuthnRequest{
 		RequestID:  requestID,
 		SPEntityID: spEntityID,
@@ -145,7 +150,12 @@ func ClearPendingRequest(w http.ResponseWriter) {
 	})
 }
 
+// SaveOIDCPendingRequest persists an OIDC /authorize context into a signed
+// cookie until the user finishes authentication. Saving an OIDC pending
+// request also clears any SAML pending request so a stale cross-protocol
+// pending cookie cannot hijack a later /sso/complete redirect.
 func SaveOIDCPendingRequest(w http.ResponseWriter, req *PendingOIDCRequest, sessionKey string) {
+	ClearPendingRequest(w)
 	req.ExpiresAt = time.Now().Add(10 * time.Minute).Unix()
 	val := SignedEncode(req, sessionKey)
 	http.SetCookie(w, &http.Cookie{
@@ -184,6 +194,14 @@ func ClearOIDCPendingRequest(w http.ResponseWriter) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// ClearAllPending wipes every pending-request cookie. Use it after a successful
+// IdP login completes so no stale flow can be replayed on the next /authorize
+// or /sso request.
+func ClearAllPending(w http.ResponseWriter) {
+	ClearPendingRequest(w)
+	ClearOIDCPendingRequest(w)
 }
 
 func SignedEncode(data any, key string) string {

@@ -30,10 +30,255 @@
   // src/umd.ts
   var exports_umd = {};
   __export(exports_umd, {
+    resolveError: () => resolveError,
+    resolveCatalog: () => resolveCatalog,
+    isGenericErrorCode: () => isGenericErrorCode,
     HankoProvider: () => HankoProvider,
     AuthFlow: () => AuthFlow,
     AuthDOMController: () => AuthDOMController
   });
+
+  // src/core/errors.ts
+  var GENERIC_ERROR_CODES = new Set([
+    "invalid_form_data",
+    "form_data_invalid_error",
+    "value_invalid_error",
+    "value_invalid",
+    "validation_error"
+  ]);
+  var DEFAULT_FALLBACK = "Authentication error. Please try again.";
+  var EN_CATALOG = {
+    fallback: DEFAULT_FALLBACK,
+    byCode: {
+      invalid_form_data: "Please check the form fields and try again.",
+      form_data_invalid_error: "Please check the form fields and try again.",
+      value_invalid_error: "The value you entered is not valid.",
+      value_invalid: "The value you entered is not valid.",
+      value_too_short_error: "The value you entered is too short.",
+      value_too_long_error: "The value you entered is too long.",
+      invalid_credentials: "Invalid email or password.",
+      invalid_credentials_error: "Invalid email or password.",
+      password_invalid_error: "Invalid password.",
+      password_too_short_error: "Password is too short.",
+      password_too_long_error: "Password is too long.",
+      passcode_invalid: "The verification code is incorrect.",
+      passcode_invalid_error: "The verification code is incorrect.",
+      passcode_expired: "The verification code has expired.",
+      passcode_expired_error: "The verification code has expired.",
+      passcode_attempts_reached_error: "Too many failed attempts. Request a new code.",
+      rate_limit_exceeded_error: "Too many requests. Please wait and try again.",
+      too_many_requests: "Too many requests. Please wait and try again.",
+      flow_expired_error: "Your session has expired. Please start over.",
+      unauthorized_error: "You are not authorized to perform this action.",
+      unauthorized: "You are not authorized to perform this action.",
+      forbidden: "Access is forbidden.",
+      not_found: "The requested resource was not found.",
+      user_not_found: "Account not found.",
+      unknown_username_error: "Account not found.",
+      email_address_already_exists_error: "Email already in use.",
+      network_error: "Network error. Please check your connection.",
+      internal_server_error: "Server error. Please try again later.",
+      unknown_error: "Unexpected error. Please try again."
+    },
+    byStateCode: {
+      login_password: {
+        invalid_form_data: "Invalid email or password.",
+        form_data_invalid_error: "Invalid email or password.",
+        value_invalid_error: "Invalid email or password."
+      },
+      login_identifier: {
+        invalid_form_data: "Please enter a valid email or username.",
+        form_data_invalid_error: "Please enter a valid email or username."
+      },
+      login_init: {
+        invalid_form_data: "Please enter a valid email or username."
+      },
+      onboarding_email: {
+        invalid_form_data: "Please enter a valid email address.",
+        email_address_already_exists_error: "Email already in use."
+      }
+    }
+  };
+  var RU_CATALOG = {
+    fallback: "Ошибка аутентификации. Попробуйте ещё раз.",
+    byCode: {
+      invalid_form_data: "Проверьте поля формы и попробуйте снова.",
+      form_data_invalid_error: "Проверьте поля формы и попробуйте снова.",
+      value_invalid_error: "Введённое значение некорректно.",
+      value_invalid: "Введённое значение некорректно.",
+      value_too_short_error: "Слишком короткое значение.",
+      value_too_long_error: "Слишком длинное значение.",
+      invalid_credentials: "Неверный e-mail или пароль.",
+      invalid_credentials_error: "Неверный e-mail или пароль.",
+      password_invalid_error: "Неверный пароль.",
+      password_too_short_error: "Пароль слишком короткий.",
+      password_too_long_error: "Пароль слишком длинный.",
+      passcode_invalid: "Код подтверждения неверен.",
+      passcode_invalid_error: "Код подтверждения неверен.",
+      passcode_expired: "Срок действия кода истёк.",
+      passcode_expired_error: "Срок действия кода истёк.",
+      passcode_attempts_reached_error: "Слишком много неудачных попыток. Запросите новый код.",
+      rate_limit_exceeded_error: "Слишком много запросов. Подождите и повторите.",
+      too_many_requests: "Слишком много запросов. Подождите и повторите.",
+      flow_expired_error: "Сессия истекла. Начните заново.",
+      unauthorized_error: "У вас нет прав для этого действия.",
+      unauthorized: "У вас нет прав для этого действия.",
+      forbidden: "Доступ запрещён.",
+      not_found: "Ресурс не найден.",
+      user_not_found: "Аккаунт не найден.",
+      unknown_username_error: "Аккаунт не найден.",
+      email_address_already_exists_error: "Этот e-mail уже используется.",
+      network_error: "Сетевая ошибка. Проверьте подключение.",
+      internal_server_error: "Ошибка сервера. Попробуйте позже.",
+      unknown_error: "Непредвиденная ошибка. Попробуйте снова."
+    },
+    byStateCode: {
+      login_password: {
+        invalid_form_data: "Неверный e-mail или пароль.",
+        form_data_invalid_error: "Неверный e-mail или пароль.",
+        value_invalid_error: "Неверный e-mail или пароль."
+      },
+      login_identifier: {
+        invalid_form_data: "Введите корректный e-mail или имя пользователя.",
+        form_data_invalid_error: "Введите корректный e-mail или имя пользователя."
+      },
+      login_init: {
+        invalid_form_data: "Введите корректный e-mail или имя пользователя."
+      },
+      onboarding_email: {
+        invalid_form_data: "Введите корректный e-mail.",
+        email_address_already_exists_error: "Этот e-mail уже используется."
+      }
+    }
+  };
+  var BUILTIN_CATALOGS = {
+    en: EN_CATALOG,
+    "en-us": EN_CATALOG,
+    ru: RU_CATALOG,
+    "ru-ru": RU_CATALOG
+  };
+  function pickBuiltinCatalog(locale) {
+    if (!locale) {
+      return EN_CATALOG;
+    }
+    const key = locale.toLowerCase();
+    return BUILTIN_CATALOGS[key] ?? BUILTIN_CATALOGS[key.split("-")[0]] ?? EN_CATALOG;
+  }
+  function mergeCatalogs(base, override) {
+    if (!override) {
+      return base;
+    }
+    return {
+      fallback: override.fallback ?? base.fallback,
+      byCode: { ...base.byCode, ...override.byCode },
+      byStateCode: {
+        ...base.byStateCode,
+        ...override.byStateCode
+      }
+    };
+  }
+  function resolveCatalog(locale, override) {
+    return mergeCatalogs(pickBuiltinCatalog(locale), override);
+  }
+  function isGenericErrorCode(code) {
+    if (!code) {
+      return false;
+    }
+    return GENERIC_ERROR_CODES.has(code);
+  }
+  function resolveError(state, catalog, ctx = {}) {
+    if (!state) {
+      return null;
+    }
+    const stateName = state.name;
+    const inputError = findInputError(state);
+    const stateError = state.error;
+    if (inputError && !isGenericErrorCode(inputError.code)) {
+      return {
+        code: inputError.code,
+        message: lookupCatalog(catalog, stateName, inputError.code) ?? inputError.message,
+        source: "input"
+      };
+    }
+    if (stateError && !isGenericErrorCode(stateError.code)) {
+      return {
+        code: stateError.code,
+        message: lookupCatalog(catalog, stateName, stateError.code) ?? stateError.message,
+        source: "state"
+      };
+    }
+    if (inputError?.message && !isGenericMessage(inputError.message)) {
+      return {
+        code: inputError.code,
+        message: inputError.message,
+        source: "input"
+      };
+    }
+    const code = stateError?.code ?? inputError?.code;
+    if (code) {
+      const fromCatalog = lookupCatalog(catalog, stateName, code);
+      if (fromCatalog) {
+        return { code, message: fromCatalog, source: "catalog" };
+      }
+    }
+    if (stateError?.message && !isGenericMessage(stateError.message)) {
+      return {
+        code: stateError.code,
+        message: stateError.message,
+        source: "state"
+      };
+    }
+    if (typeof state.payload?.error === "string" && state.payload.error.trim().length > 0) {
+      return {
+        code: undefined,
+        message: state.payload.error,
+        source: "payload"
+      };
+    }
+    if (ctx.fallback) {
+      return { message: ctx.fallback, source: "explicit" };
+    }
+    if (code || stateError || inputError) {
+      return { code, message: catalog.fallback ?? DEFAULT_FALLBACK, source: "fallback" };
+    }
+    return null;
+  }
+  function lookupCatalog(catalog, stateName, code) {
+    if (!code) {
+      return;
+    }
+    if (stateName) {
+      const byState = catalog.byStateCode?.[stateName];
+      if (byState && byState[code]) {
+        return byState[code];
+      }
+    }
+    return catalog.byCode?.[code];
+  }
+  function findInputError(state) {
+    for (const action of Object.values(state.actions)) {
+      if (!action?.inputs) {
+        continue;
+      }
+      for (const input of Object.values(action.inputs)) {
+        if (input?.error) {
+          return input.error;
+        }
+      }
+    }
+    return;
+  }
+  var GENERIC_MESSAGES = new Set([
+    "form data invalid",
+    "form data invalid.",
+    "invalid form data",
+    "invalid form data.",
+    "validation error",
+    "validation failed"
+  ]);
+  function isGenericMessage(message) {
+    return GENERIC_MESSAGES.has(message.trim().toLowerCase());
+  }
 
   // src/core/dom.ts
   var defaultOptions = {
@@ -51,6 +296,7 @@
     config;
     options;
     boundSubmit = null;
+    restarting = false;
     constructor(flow, options = {}) {
       this.flow = flow;
       this.config = flow.getConfig();
@@ -75,7 +321,7 @@
         this.renderState(state);
       } catch (error) {
         this.showForm();
-        this.showError(this.getErrorMessage(error, "Failed to initialize"));
+        this.showError(this.getErrorMessage(error));
       }
     }
     destroy() {
@@ -101,6 +347,7 @@
           this.showForm();
           this.showPasswordField();
           this.renderInlineError(state);
+          this.handlePasswordRetry(state);
           break;
         case "onboarding_email":
           this.showForm();
@@ -114,8 +361,7 @@
           window.location.href = this.config.successRedirect ?? "/sso/complete";
           break;
         case "error":
-          this.showForm();
-          this.showError(state.error_message ?? (typeof state.payload?.error === "string" ? state.payload.error : "Authentication error"));
+          this.recoverFromErrorState(state);
           break;
         default:
           this.showForm();
@@ -149,7 +395,8 @@
         }
         this.renderState(next);
       } catch (error) {
-        this.showError(this.getErrorMessage(error, "An error occurred"));
+        this.showError(this.getErrorMessage(error));
+        this.recoverFromException();
       } finally {
         this.setLoading(false);
       }
@@ -167,6 +414,50 @@
         emailInput.focus();
       }
       this.renderInlineError(state);
+    }
+    handlePasswordRetry(state) {
+      const passwordInput = this.getPasswordInput();
+      if (!passwordInput) {
+        return;
+      }
+      const hasError = state.error || state.error_message || state.actions.password_login?.inputs?.password?.error;
+      if (hasError) {
+        passwordInput.value = "";
+        passwordInput.focus();
+        passwordInput.select?.();
+      }
+    }
+    async recoverFromErrorState(state) {
+      if (this.restarting) {
+        this.showForm();
+        return;
+      }
+      this.restarting = true;
+      const message = state.error_message ?? this.getErrorMessage(state.error);
+      try {
+        const next = await this.flow.restart({ preserveError: false });
+        this.renderState(next);
+        if (message) {
+          this.showError(message);
+        }
+      } catch (error) {
+        this.showForm();
+        this.showError(this.getErrorMessage(error));
+      } finally {
+        this.restarting = false;
+      }
+    }
+    async recoverFromException() {
+      if (this.restarting) {
+        return;
+      }
+      this.restarting = true;
+      try {
+        const next = await this.flow.restart({ preserveError: true });
+        this.renderState(next);
+      } catch {} finally {
+        this.restarting = false;
+      }
     }
     getForm() {
       return document.getElementById(this.options.formId);
@@ -209,9 +500,9 @@
       errorEl.classList.remove("hidden");
     }
     renderInlineError(state) {
-      const message = state.error_message ?? state.error?.message ?? (typeof state.payload?.error === "string" ? state.payload.error : "");
-      if (message) {
-        this.showError(message);
+      const resolved = resolveError(state, this.flow.getCatalog());
+      if (resolved?.message) {
+        this.showError(resolved.message);
       }
     }
     clearError() {
@@ -230,11 +521,19 @@
       button.disabled = enabled;
       button.classList.toggle("opacity-50", enabled);
     }
-    getErrorMessage(error, fallback) {
-      if (error instanceof Error && error.message) {
-        return `${fallback}: ${error.message}`;
+    getErrorMessage(error) {
+      const catalog = this.flow.getCatalog();
+      if (error && typeof error === "object" && "code" in error) {
+        const code = error.code;
+        const message = code && catalog.byCode?.[code] || error.message || catalog.fallback;
+        if (message) {
+          return message;
+        }
       }
-      return fallback;
+      if (error instanceof Error && error.message) {
+        return error.message;
+      }
+      return catalog.fallback ?? "Authentication error.";
     }
   }
 
@@ -255,17 +554,36 @@
   class AuthFlow {
     provider;
     config;
+    catalog;
     currentState = null;
+    currentFlow = "login";
     constructor(provider, config) {
       this.provider = provider;
       this.config = config;
+      this.catalog = resolveCatalog(config.locale, config.errorCatalog);
     }
     async start(flow = "login") {
+      this.currentFlow = flow;
       const state = await this.provider.init(flow);
       return this.setState(await this.advanceState(state));
     }
+    async restart(options = {}) {
+      const previousError = options.preserveError ? this.currentState?.error_message ?? this.resolveError()?.message : undefined;
+      const state = await this.provider.init(this.currentFlow);
+      const next = await this.advanceState(state);
+      if (previousError) {
+        next.error_message = previousError;
+      }
+      return this.setState(next);
+    }
     getConfig() {
       return this.config;
+    }
+    getCatalog() {
+      return this.catalog;
+    }
+    resolveError() {
+      return resolveError(this.currentState, this.catalog);
     }
     onSessionCreated(cb) {
       this.provider.onSessionCreated(cb);
@@ -340,40 +658,14 @@
       return this.currentState;
     }
     normalizeState(state) {
-      const message = this.resolveStateErrorMessage(state);
-      if (!message || state.error_message === message) {
+      const resolved = resolveError(state, this.catalog);
+      if (!resolved) {
         return state;
       }
-      return {
-        ...state,
-        error_message: message
-      };
-    }
-    resolveStateErrorMessage(state) {
-      if (state.error?.message) {
-        return state.error.message;
+      if (state.error_message === resolved.message) {
+        return state;
       }
-      const inputError = this.findInputError(state);
-      if (inputError?.message) {
-        return inputError.message;
-      }
-      if (typeof state.payload?.error === "string") {
-        return state.payload.error;
-      }
-      return state.error_message;
-    }
-    findInputError(state) {
-      for (const action of Object.values(state.actions)) {
-        if (!action?.inputs) {
-          continue;
-        }
-        for (const input of Object.values(action.inputs)) {
-          if (input?.error) {
-            return input.error;
-          }
-        }
-      }
-      return;
+      return { ...state, error_message: resolved.message };
     }
   }
 
@@ -1159,11 +1451,12 @@
   class HankoProvider {
     apiUrl;
     hanko;
-    constructor(apiUrl, locale) {
+    constructor(apiUrl, options = {}) {
+      const opts = typeof options === "string" ? { locale: options } : options;
       this.apiUrl = apiUrl.replace(/\/$/, "");
-      this.hanko = new Hanko(this.apiUrl, locale ? { lang: locale } : undefined);
-      if (locale) {
-        this.hanko.setLang?.(locale);
+      this.hanko = new Hanko(this.apiUrl, opts.locale ? { lang: opts.locale } : undefined);
+      if (opts.locale) {
+        this.hanko.setLang?.(opts.locale);
       }
     }
     async init(flow) {
@@ -1186,7 +1479,7 @@
     if (!config?.apiUrl) {
       return;
     }
-    const provider = new HankoProvider(config.apiUrl, config.locale);
+    const provider = new HankoProvider(config.apiUrl, { locale: config.locale });
     const flow = new AuthFlow(provider, config);
     const controller = new AuthDOMController(flow);
     controller.mount().catch(() => {});
@@ -1196,5 +1489,5 @@
   }
 })();
 
-//# debugId=8D04D09199990AA864756E2164756E21
+//# debugId=FF9C648C494E413264756E2164756E21
 //# sourceMappingURL=umd.js.map

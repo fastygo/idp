@@ -98,34 +98,43 @@ func (s *IdPServer) HandleSSOComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.CreateSession(w, claims.Email, sub, sid, s.cfg.SessionKey)
 
-	if pending := auth.GetPendingRequest(r, s.cfg.SessionKey); pending != nil {
-		sp := s.cfg.FindSP(pending.SPEntityID)
+	// Pick the freshest pending request: an OIDC /authorize started after a
+	// stale SAML AuthnRequest must win and vice-versa. Save*PendingRequest
+	// already wipes the opposite cookie, so under normal flow only one is
+	// present here. We still wipe both at the very end as a defence in
+	// depth so no cross-protocol replay is possible on the next visit.
+	samlPending := auth.GetPendingRequest(r, s.cfg.SessionKey)
+	oidcPending := auth.GetOIDCPendingRequest(r, s.cfg.SessionKey)
+
+	if samlPending != nil {
+		sp := s.cfg.FindSP(samlPending.SPEntityID)
 		if sp == nil {
 			s.renderer.RenderError(w, r, "Unknown service provider", http.StatusBadRequest)
 			return
 		}
 
-		auth.ClearPendingRequest(w)
+		auth.ClearAllPending(w)
 		s.completeSAML(w, r, &saml.ParsedRequest{
-			AuthnRequest: saml.AuthnRequest{ID: pending.RequestID, ACSUrl: pending.ACSUrl},
+			AuthnRequest: saml.AuthnRequest{ID: samlPending.RequestID, ACSUrl: samlPending.ACSUrl},
 			SP:           sp,
-			RelayState:   pending.RelayState,
+			RelayState:   samlPending.RelayState,
 		}, claims.Email)
 		return
 	}
 
-	if pending := auth.GetOIDCPendingRequest(r, s.cfg.SessionKey); pending != nil {
-		client := s.cfg.FindOIDCClient(pending.ClientID)
+	if oidcPending != nil {
+		client := s.cfg.FindOIDCClient(oidcPending.ClientID)
 		if client == nil {
 			s.renderer.RenderError(w, r, "Unknown OIDC client", http.StatusBadRequest)
 			return
 		}
 
-		auth.ClearOIDCPendingRequest(w)
-		s.oidc.IssueCode(w, r, client, pending.RedirectURI, pending.State, pending.Nonce, pending.Scope, claims.Email, sub, sid, pending.CodeChallenge, pending.CodeChallengeMethod)
+		auth.ClearAllPending(w)
+		s.oidc.IssueCode(w, r, client, oidcPending.RedirectURI, oidcPending.State, oidcPending.Nonce, oidcPending.Scope, claims.Email, sub, sid, oidcPending.CodeChallenge, oidcPending.CodeChallengeMethod)
 		return
 	}
 
+	auth.ClearAllPending(w)
 	http.Redirect(w, r, s.cfg.BaseURL, http.StatusFound)
 }
 
