@@ -95,15 +95,19 @@
         case "login_method_chooser":
           this.showForm();
           this.hidePasswordField();
+          this.renderInlineError(state);
           break;
         case "login_password":
           this.showForm();
           this.showPasswordField();
+          this.renderInlineError(state);
           break;
         case "onboarding_email":
           this.showForm();
           if (!this.config.features?.allowPublicRegistration) {
             this.showError("Registration is not available. Contact your administrator.");
+          } else {
+            this.renderInlineError(state);
           }
           break;
         case "success":
@@ -162,6 +166,7 @@
         emailInput.setAttribute("autocomplete", input.name === "username" ? "username webauthn" : "email username webauthn");
         emailInput.focus();
       }
+      this.renderInlineError(state);
     }
     getForm() {
       return document.getElementById(this.options.formId);
@@ -202,6 +207,12 @@
       }
       errorEl.textContent = message;
       errorEl.classList.remove("hidden");
+    }
+    renderInlineError(state) {
+      const message = state.error_message ?? state.error?.message ?? (typeof state.payload?.error === "string" ? state.payload.error : "");
+      if (message) {
+        this.showError(message);
+      }
     }
     clearError() {
       const errorEl = this.getErrorElement();
@@ -325,8 +336,44 @@
       return this.currentState;
     }
     setState(state) {
-      this.currentState = state;
-      return state;
+      this.currentState = this.normalizeState(state);
+      return this.currentState;
+    }
+    normalizeState(state) {
+      const message = this.resolveStateErrorMessage(state);
+      if (!message || state.error_message === message) {
+        return state;
+      }
+      return {
+        ...state,
+        error_message: message
+      };
+    }
+    resolveStateErrorMessage(state) {
+      if (state.error?.message) {
+        return state.error.message;
+      }
+      const inputError = this.findInputError(state);
+      if (inputError?.message) {
+        return inputError.message;
+      }
+      if (typeof state.payload?.error === "string") {
+        return state.payload.error;
+      }
+      return state.error_message;
+    }
+    findInputError(state) {
+      for (const action of Object.values(state.actions)) {
+        if (!action?.inputs) {
+          continue;
+        }
+        for (const input of Object.values(action.inputs)) {
+          if (input?.error) {
+            return input.error;
+          }
+        }
+      }
+      return;
     }
   }
 
@@ -1112,9 +1159,12 @@
   class HankoProvider {
     apiUrl;
     hanko;
-    constructor(apiUrl) {
+    constructor(apiUrl, locale) {
       this.apiUrl = apiUrl.replace(/\/$/, "");
-      this.hanko = new Hanko(this.apiUrl);
+      this.hanko = new Hanko(this.apiUrl, locale ? { lang: locale } : undefined);
+      if (locale) {
+        this.hanko.setLang?.(locale);
+      }
     }
     async init(flow) {
       return this.hanko.createState(flow);
@@ -1136,17 +1186,15 @@
     if (!config?.apiUrl) {
       return;
     }
-    const provider = new HankoProvider(config.apiUrl);
+    const provider = new HankoProvider(config.apiUrl, config.locale);
     const flow = new AuthFlow(provider, config);
     const controller = new AuthDOMController(flow);
-    controller.mount().catch((error) => {
-      console.error("[Authfly] bootstrap failed", error);
-    });
+    controller.mount().catch(() => {});
   }
   if (typeof window !== "undefined" && typeof document !== "undefined") {
     bootstrap();
   }
 })();
 
-//# debugId=74B63189A08DDCA164756E2164756E21
+//# debugId=8D04D09199990AA864756E2164756E21
 //# sourceMappingURL=umd.js.map
