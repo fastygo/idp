@@ -2,7 +2,9 @@ package oidc
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"idp-cyberos/internal/config"
@@ -29,6 +31,16 @@ func (h *Handlers) verifyAccessToken(tokenStr string) (*AccessTokenClaims, error
 	var claims AccessTokenClaims
 	if err := VerifySignedClaims(tokenStr, &h.kp.PrivateKey.PublicKey, &claims); err != nil {
 		return nil, err
+	}
+
+	// Defence in depth: even though the token is signed by us, refuse it if
+	// the iss claim does not match the issuer we are currently configured
+	// for. This prevents an attacker who somehow ferrets out an old token
+	// (e.g. from a previous BaseURL value during a re-deploy) from using it
+	// against a re-keyed/re-named IdP.
+	expectedIss := strings.TrimRight(h.cfg.BaseURL, "/")
+	if claims.Iss != "" && expectedIss != "" && claims.Iss != expectedIss {
+		return nil, fmt.Errorf("issuer mismatch: token=%q expected=%q", claims.Iss, expectedIss)
 	}
 
 	active, err := h.isAccessTokenActive(&claims)

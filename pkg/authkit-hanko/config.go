@@ -13,10 +13,24 @@ type Verifier struct {
 	apiURL      string
 }
 
+// VerifierOptions tunes the JWT verifier the Hanko adapter exposes.
+// Leaving fields empty preserves the previous behaviour (no iss/aud check).
+type VerifierOptions struct {
+	ExpectedIssuer   string
+	ExpectedAudience string
+}
+
 func NewVerifier(apiURL string) *Verifier {
+	return NewVerifierWithOptions(apiURL, VerifierOptions{})
+}
+
+func NewVerifierWithOptions(apiURL string, opts VerifierOptions) *Verifier {
 	return &Verifier{
-		jwtVerifier: NewJWTVerifier(apiURL),
-		apiURL:      strings.TrimRight(apiURL, "/"),
+		jwtVerifier: NewJWTVerifierWithOptions(apiURL, JWTVerifierOptions{
+			ExpectedIssuer:   opts.ExpectedIssuer,
+			ExpectedAudience: opts.ExpectedAudience,
+		}),
+		apiURL: strings.TrimRight(apiURL, "/"),
 	}
 }
 

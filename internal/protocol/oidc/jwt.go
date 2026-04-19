@@ -22,15 +22,16 @@ type jwtHeader struct {
 }
 
 type idTokenClaims struct {
-	Iss   string `json:"iss"`
-	Sub   string `json:"sub"`
-	Aud   string `json:"aud"`
-	Exp   int64  `json:"exp"`
-	Iat   int64  `json:"iat"`
-	Jti   string `json:"jti,omitempty"`
-	Sid   string `json:"sid,omitempty"`
-	Email string `json:"email,omitempty"`
-	Nonce string `json:"nonce,omitempty"`
+	Iss    string `json:"iss"`
+	Sub    string `json:"sub"`
+	Aud    string `json:"aud"`
+	Exp    int64  `json:"exp"`
+	Iat    int64  `json:"iat"`
+	Jti    string `json:"jti,omitempty"`
+	Sid    string `json:"sid,omitempty"`
+	Email  string `json:"email,omitempty"`
+	Nonce  string `json:"nonce,omitempty"`
+	AtHash string `json:"at_hash,omitempty"`
 }
 
 type AccessTokenClaims struct {
@@ -62,6 +63,14 @@ func ComputeKID(kp *auth.IdPKeyPair) string {
 }
 
 func GenerateIDToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce, sid string, ttl time.Duration) (string, error) {
+	return GenerateIDTokenWithAccess(kp, issuer, audience, sub, email, nonce, sid, "", ttl)
+}
+
+// GenerateIDTokenWithAccess builds an id_token and, when accessToken is
+// non-empty, also computes the OpenID Connect Core 1.0 §3.1.3.6 at_hash
+// claim. Per spec for an RS256 id_token signed alongside an access token
+// at_hash is the base64url(left128(SHA-256(access_token))).
+func GenerateIDTokenWithAccess(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce, sid, accessToken string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := idTokenClaims{
 		Iss:   issuer,
@@ -74,7 +83,18 @@ func GenerateIDToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, nonce, s
 		Email: email,
 		Nonce: nonce,
 	}
+	if accessToken != "" {
+		claims.AtHash = computeAtHash(accessToken)
+	}
 	return signJWT(kp, claims)
+}
+
+// computeAtHash returns the OIDC at_hash for an RS256 id_token. The claim
+// lets a client prove that the id_token and access_token belong to the
+// same response without trusting the channel alone.
+func computeAtHash(accessToken string) string {
+	sum := sha256.Sum256([]byte(accessToken))
+	return base64.RawURLEncoding.EncodeToString(sum[:len(sum)/2])
 }
 
 func GenerateAccessToken(kp *auth.IdPKeyPair, issuer, audience, sub, email, scope, sid string, ttl time.Duration) (string, error) {

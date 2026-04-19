@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"idp-cyberos/internal/auth"
@@ -32,6 +33,17 @@ func NewIdPServer(cfg *config.Config, kp *auth.IdPKeyPair, creds core.Credential
 		renderer:     renderer,
 		oidc:         protocoloidc.NewHandlers(cfg, kp, codeStore, sessionStore, revoker),
 	}
+}
+
+// SetOIDCHandlers swaps the OIDC handlers attached to this server. The
+// production main wiring builds the OIDC handlers with a lifecycle-bound
+// background context (so the back-channel logout goroutines can be
+// drained on shutdown) and then injects them via this setter.
+func (s *IdPServer) SetOIDCHandlers(h *protocoloidc.Handlers) {
+	if h == nil {
+		return
+	}
+	s.oidc = h
 }
 
 func (s *IdPServer) OIDCHandlers() *protocoloidc.Handlers {
@@ -164,12 +176,17 @@ func (s *IdPServer) completeSAML(w http.ResponseWriter, r *http.Request, req *sa
 	}
 }
 
+// extractToken pulls the IdP credential JWT from the incoming request.
+// Only header- and cookie-based carriers are accepted; query-string tokens
+// were removed because URLs land in proxy access logs, browser history and
+// Referer headers, which is the exact kind of credential leak we are
+// closing as part of the production-hardening pass.
 func extractToken(r *http.Request, cookieName string) string {
-	if authHeader := r.Header.Get("Authorization"); len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		return authHeader[7:]
+	if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 	}
 	if cookie, err := r.Cookie(cookieName); err == nil {
 		return cookie.Value
 	}
-	return r.URL.Query().Get("token")
+	return ""
 }

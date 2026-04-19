@@ -1,12 +1,14 @@
 package oidc
 
 import (
+	"context"
 	"crypto/hmac"
 	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"idp-cyberos/internal/auth"
@@ -21,15 +23,36 @@ type Handlers struct {
 	codeStore    core.AuthCodeStore
 	sessionStore core.SessionStore
 	revoker      core.TokenRevoker
+
+	// bgCtx is the lifecycle-bound context used for fire-and-forget work
+	// such as back-channel logout notifications. Tying these goroutines
+	// to a server-scoped context lets graceful shutdown cancel the in-
+	// flight requests instead of leaking them past process exit. bgWG
+	// lets shutdown wait for them to drain.
+	bgCtx context.Context
+	bgWG  *sync.WaitGroup
 }
 
 func NewHandlers(cfg *config.Config, kp *auth.IdPKeyPair, codeStore core.AuthCodeStore, sessionStore core.SessionStore, revoker core.TokenRevoker) *Handlers {
+	return NewHandlersWithBackground(cfg, kp, codeStore, sessionStore, revoker, context.Background(), nil)
+}
+
+// NewHandlersWithBackground is the production constructor: the IdP main
+// passes a context tied to its signal-cancelled root and a shared
+// WaitGroup so back-channel logout goroutines can be drained on
+// shutdown.
+func NewHandlersWithBackground(cfg *config.Config, kp *auth.IdPKeyPair, codeStore core.AuthCodeStore, sessionStore core.SessionStore, revoker core.TokenRevoker, bgCtx context.Context, bgWG *sync.WaitGroup) *Handlers {
+	if bgCtx == nil {
+		bgCtx = context.Background()
+	}
 	return &Handlers{
 		cfg:          cfg,
 		kp:           kp,
 		codeStore:    codeStore,
 		sessionStore: sessionStore,
 		revoker:      revoker,
+		bgCtx:        bgCtx,
+		bgWG:         bgWG,
 	}
 }
 
@@ -101,6 +124,15 @@ func (h *Handlers) HandleAuthorize(showLogin ShowLoginFunc) http.HandlerFunc {
 
 		if !client.ValidRedirectURI(redirectURI) {
 			http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+			return
+		}
+
+		// OpenID Connect Core 1.0 §3.1.2.1 makes the `openid` scope
+		// mandatory for any /authorize request. Reject early so we don't
+		// mint id_tokens for a pure OAuth-style flow we don't actually
+		// advertise in /.well-known/openid-configuration.
+		if !scopeContainsOpenID(scope) {
+			http.Error(w, "invalid_scope: scope must include openid", http.StatusBadRequest)
 			return
 		}
 
@@ -214,16 +246,20 @@ func (h *Handlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	idToken, err := GenerateIDToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Nonce, ac.SID, time.Hour)
+	// Mint the access token first so we can bind the id_token's at_hash
+	// claim to it (OIDC Core §3.1.3.6). Generating in this order also
+	// matches what well-known relying parties (e.g. AppAuth) expect when
+	// they validate the response.
+	accessToken, err := GenerateAccessToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Scope, ac.SID, time.Hour)
 	if err != nil {
-		log.Printf("OIDC id_token generation error: %v", err)
+		log.Printf("OIDC access_token generation error: %v", err)
 		tokenError(w, "server_error", "token generation failed")
 		return
 	}
 
-	accessToken, err := GenerateAccessToken(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Scope, ac.SID, time.Hour)
+	idToken, err := GenerateIDTokenWithAccess(h.kp, h.cfg.BaseURL, clientID, ac.Sub, ac.Email, ac.Nonce, ac.SID, accessToken, time.Hour)
 	if err != nil {
-		log.Printf("OIDC access_token generation error: %v", err)
+		log.Printf("OIDC id_token generation error: %v", err)
 		tokenError(w, "server_error", "token generation failed")
 		return
 	}
@@ -287,4 +323,16 @@ func tokenError(w http.ResponseWriter, code, desc string) {
 
 func secureCompare(a, b string) bool {
 	return hmac.Equal([]byte(a), []byte(b))
+}
+
+// scopeContainsOpenID returns true when the space-delimited OAuth `scope`
+// parameter contains the `openid` token. Implemented manually to avoid
+// pulling strings.Fields allocations on the hot path.
+func scopeContainsOpenID(scope string) bool {
+	for _, s := range strings.Fields(scope) {
+		if s == "openid" {
+			return true
+		}
+	}
+	return false
 }

@@ -112,6 +112,37 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 }
 
+// MinSessionKeyLength is the smallest acceptable HMAC key length in bytes.
+// 32 bytes (256 bits) matches the HMAC-SHA256 block we use for cookie
+// signing — anything shorter weakens forgery resistance and is rejected
+// at startup so production deployments cannot accidentally ship with a
+// throwaway dev secret.
+const MinSessionKeyLength = 32
+
+// Validate runs the cheap correctness checks we want at startup so the
+// IdP fails loudly instead of silently accepting an insecure setup.
+//
+// At the moment it focuses on the IdP HMAC session key:
+//   - it must not contain the well-known "CHANGE-ME" / "change-me"
+//     placeholder shipped in the example .env
+//   - it must be at least MinSessionKeyLength bytes long.
+//
+// The caller is expected to log.Fatal on the returned error.
+func (c *Config) Validate() error {
+	key := strings.TrimSpace(c.SessionKey)
+	if key == "" {
+		return fmt.Errorf("session_key is required (set IDP_SESSION_KEY or session_key in config.yaml)")
+	}
+	lowered := strings.ToLower(key)
+	if strings.Contains(lowered, "change-me") || strings.Contains(lowered, "changeme") {
+		return fmt.Errorf("session_key looks like a placeholder (%q); generate a real secret with `openssl rand -base64 32`", key)
+	}
+	if len(key) < MinSessionKeyLength {
+		return fmt.Errorf("session_key is too short: %d bytes; need at least %d", len(key), MinSessionKeyLength)
+	}
+	return nil
+}
+
 func (c *Config) BuildIndexes() {
 	c.spIndex = make(map[string]*ServiceProvider, len(c.SPs))
 	for i := range c.SPs {

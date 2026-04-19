@@ -2,6 +2,9 @@ package oidc
 
 import (
 	"net/http"
+	"time"
+
+	"idp-cyberos/pkg/core"
 )
 
 func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +29,16 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 	if err := VerifySignedClaims(token, &h.kp.PrivateKey.PublicKey, &claims); err == nil {
 		if claims.ClientID == "" || claims.ClientID == clientID {
 			if h.revoker != nil {
-				_ = h.revoker.Revoke(claims.Jti)
+				// Pin the deny-list entry to the token's natural expiry
+				// when the revoker supports it: that lets the periodic
+				// Cleanup() free entries as soon as signature/exp checks
+				// alone reject the token, and prevents the revoker map
+				// from growing forever (a real-world Go memory leak).
+				if exp, ok := h.revoker.(core.TokenRevokerWithExpiry); ok && claims.Exp > 0 {
+					_ = exp.RevokeUntil(claims.Jti, time.Unix(claims.Exp, 0))
+				} else {
+					_ = h.revoker.Revoke(claims.Jti)
+				}
 			}
 		}
 	}

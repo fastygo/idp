@@ -86,7 +86,12 @@ func generateAndSaveKeyPair(keyPath, certPath string) (*IdPKeyPair, error) {
 		return nil, fmt.Errorf("parse generated cert: %w", err)
 	}
 
-	keyFile, err := os.Create(keyPath)
+	// O_EXCL to refuse overwriting an existing file (we already checked it
+	// did not exist via fileExists() but the caller could be racing with an
+	// orchestrator) and 0600 so the on-disk private key is only readable
+	// by the IdP process owner. The previous os.Create defaulted to 0644
+	// which would leak the key to any local user on the host.
+	keyFile, err := os.OpenFile(keyPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create key file: %w", err)
 	}
@@ -94,8 +99,11 @@ func generateAndSaveKeyPair(keyPath, certPath string) (*IdPKeyPair, error) {
 	if err := pem.Encode(keyFile, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}); err != nil {
 		return nil, fmt.Errorf("write key PEM: %w", err)
 	}
+	if err := keyFile.Chmod(0o600); err != nil {
+		return nil, fmt.Errorf("chmod key file: %w", err)
+	}
 
-	certFile, err := os.Create(certPath)
+	certFile, err := os.OpenFile(certPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("create cert file: %w", err)
 	}

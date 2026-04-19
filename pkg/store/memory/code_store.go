@@ -51,6 +51,13 @@ func (s *CodeStore) Cleanup() error {
 	return nil
 }
 
+// Len is exposed for tests / metrics.
+func (s *CodeStore) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.codes)
+}
+
 func GenerateCode() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)

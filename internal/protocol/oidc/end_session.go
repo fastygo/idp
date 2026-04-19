@@ -3,6 +3,8 @@ package oidc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"html/template"
 	"log"
 	"net/http"
@@ -154,7 +156,23 @@ func (h *Handlers) performLogout(w http.ResponseWriter, sid, sub string) ([]stri
 			}
 
 			if client.BackChannelLogoutURI != "" {
-				go h.sendBackChannelLogout(context.Background(), client, record.Sub, record.SID)
+				if h.bgWG != nil {
+					h.bgWG.Add(1)
+				}
+				// Use the lifecycle-bound bgCtx so a graceful shutdown
+				// can cancel in-flight back-channel logout calls. The
+				// previous code used context.Background() and let the
+				// goroutine outlive the process — a small but real
+				// goroutine-leak vector flagged in 2025/2026 audits of
+				// fire-and-forget patterns in Go.
+				go func(c *config.OIDCClient, sub, sid string) {
+					defer func() {
+						if h.bgWG != nil {
+							h.bgWG.Done()
+						}
+					}()
+					h.sendBackChannelLogout(h.bgCtx, c, sub, sid)
+				}(client, record.Sub, record.SID)
 			}
 		}
 
@@ -187,6 +205,15 @@ func (h *Handlers) lookupLogoutRecords(sid, sub string) ([]*core.SessionRecord, 
 	return h.sessionStore.LookupBySub(sub)
 }
 
+// backchannelLogoutClient is a process-wide client tuned for short
+// fire-and-forget POSTs. Reusing a single transport prevents the goroutine
+// pool from creating fresh connections on every logout — under load this
+// also avoided a noticeable goroutine pile-up because http.DefaultClient
+// has no per-call timeout.
+var backchannelLogoutClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
 func (h *Handlers) sendBackChannelLogout(ctx context.Context, client *config.OIDCClient, sub, sid string) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -207,15 +234,26 @@ func (h *Handlers) sendBackChannelLogout(ctx context.Context, client *config.OID
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := backchannelLogoutClient.Do(req)
 	if err != nil {
-		log.Printf("OIDC back-channel logout request failed for %s: %v", client.ClientID, err)
+		log.Printf("OIDC back-channel logout request failed for %s (sid_hash=%s): %v", client.ClientID, hashForLog(sid), err)
 		return
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		log.Printf("OIDC back-channel logout non-success for %s: %s", client.ClientID, resp.Status)
+		log.Printf("OIDC back-channel logout non-success for %s (sid_hash=%s): %s", client.ClientID, hashForLog(sid), resp.Status)
 	}
+}
+
+// hashForLog returns a short, non-reversible identifier for log lines so
+// we can correlate logout / failure entries without leaking the raw
+// session id (which is treated as a credential).
+func hashForLog(s string) string {
+	if s == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:4])
 }
 
 func buildFrontChannelLogoutURL(client *config.OIDCClient, issuer, sid string) string {

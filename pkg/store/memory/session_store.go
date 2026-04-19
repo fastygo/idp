@@ -3,6 +3,7 @@ package memory
 import (
 	"slices"
 	"sync"
+	"time"
 
 	"idp-cyberos/pkg/core"
 )
@@ -83,6 +84,25 @@ func (s *SessionStore) Revoke(sid string) error {
 	return nil
 }
 
+// Cleanup drops every session whose ExpiresAt has already passed. The
+// in-memory map otherwise grew unbounded for the lifetime of the
+// process, which is one of the most common Go memory-leak shapes (long
+// lived map without an eviction path).
 func (s *SessionStore) Cleanup() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for sid, rec := range s.sessions {
+		if !rec.ExpiresAt.IsZero() && now.After(rec.ExpiresAt) {
+			delete(s.sessions, sid)
+		}
+	}
 	return nil
+}
+
+// Len is exposed for tests / metrics.
+func (s *SessionStore) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.sessions)
 }
